@@ -1,0 +1,15 @@
+{
+  "host": "localhost",
+  "port": 5432,
+  "user": "roaldchristesen",
+  "password": "",
+  "dbname": "oklab",
+  "dbschema": "pluto",
+  "sslmode": "disabled",
+  "image_upload_dir": "./uploads/img",
+  "image_cache_dir": "./uploads/cache",
+  "userdb_shema": "uranus",
+  "userdb_table": "user",
+  "userdb_login_column": "login",
+  "userdb_hash_column": "hash"
+}
