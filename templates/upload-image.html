@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload Image</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f2f2f2;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+        }
+
+        .upload-container {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            width: 400px;
+            text-align: center;
+        }
+
+        .drop-zone {
+            border: 2px dashed #bbb;
+            border-radius: 6px;
+            padding: 2rem;
+            background: #fafafa;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .drop-zone.dragover {
+            background: #e8f0fe;
+            border-color: #4285f4;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        #preview {
+            margin-top: 1rem;
+            max-width: 100%;
+            display: none;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        .submit-btn {
+            margin-top: 1rem;
+            background-color: #4CAF50;
+            color: white;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .submit-btn:hover {
+            background-color: #45a049;
+        }
+
+        .form-group {
+            margin-top: 1rem;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.2rem;
+            font-weight: bold;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.4rem;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="upload-container">
+    <h2>Upload Image</h2>
+    <form id="uploadForm" enctype="multipart/form-data" action="http://localhost:8080/upload" method="post">
+        <div class="drop-zone" id="dropZone">
+            <p>Drag & drop image here or click to select</p>
+            <input type="file" name="file_input" id="fileInput" accept="image/*" />
+        </div>
+        <img id="preview" alt="Image Preview" />
+
+        <!-- Individual metadata fields -->
+        <div class="form-group">
+            <label for="license">License Type</label>
+            <input type="text" name="license" id="license" />
+        </div>
+        <div class="form-group">
+            <label for="created_by">Created By</label>
+            <input type="text" name="created_by" id="created_by" />
+        </div>
+        <div class="form-group">
+            <label for="copyright">Copyright</label>
+            <input type="text" name="copyright" id="copyright" />
+        </div>
+        <div class="form-group">
+            <label for="alt_text">Alternate Text</label>
+            <input type="text" name="alt_text" id="alt_text" />
+        </div>
+        <div class="form-group">
+            <label for="focus_x">Focus X (0–10000)</label>
+            <input type="number" step="0.01" min="0" max="1" name="focus_x" id="focus_x" />
+        </div>
+        <div class="form-group">
+            <label for="focus_y">Focus Y (0–10000)</label>
+            <input type="number" step="0.01" min="0" max="1" name="focus_y" id="focus_y" />
+        </div>
+        <div class="form-group">
+            <label for="user_id">User ID</label>
+            <input type="text" name="user_id" id="user_id" />
+        </div>
+        <input type="submit" value="Upload" class="submit-btn" />
+    </form>
+</div>
+
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            fileInput.files = e.dataTransfer.files;
+            previewImage(file);
+        }
+    });
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files[0];
+        if (file) previewImage(file);
+    });
+
+    function previewImage(file) {
+        if (!file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+</script>
+
+</body>
+</html>
