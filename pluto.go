@@ -1,25 +1,43 @@
-package app
+package pluto
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"io/ioutil"
 	"log"
 	"os"
 )
 
-type App struct {
+type Pluto struct {
 	ImageDB *pgxpool.Pool
 	UserDB  *pgxpool.Pool
 	Config  Config
 }
 
-var GApp App
+var Singleton *Pluto
 
-func (app *App) LoadConfig(fileName string) error {
-	file, err := os.Open(fileName)
+func (app *Pluto) Init(configFilePath string) error {
+	err := app.loadConfig(configFilePath)
+	if err != nil {
+		panic(err)
+	}
+
+	err = app.prepareSql()
+	if err != nil {
+		panic(err)
+	}
+
+	app.initDB()
+	defer app.ImageDB.Close()
+
+	return nil
+}
+
+func (app *Pluto) loadConfig(configFilePath string) error {
+	file, err := os.Open(configFilePath)
 	if err != nil {
 		return err
 	}
@@ -39,7 +57,7 @@ func (app *App) LoadConfig(fileName string) error {
 	return nil
 }
 
-func (app *App) PrepareSql() error {
+func (app *Pluto) prepareSql() error {
 	/*
 		// Read the SQL file
 		content, err := os.ReadFile("queries/queryEvent.sql")
@@ -49,14 +67,14 @@ func (app *App) PrepareSql() error {
 
 		// Convert to string and replace {{schema}} with actual schema name
 		query := string(content)
-		query = strings.ReplaceAll(query, "{{schema}}", app.Config.DBSchema)
-		app.SqlQueryEvent = query
-		fmt.Println(app.SqlQueryEvent)
+		query = strings.ReplaceAll(query, "{{schema}}", pluto.Config.DBSchema)
+		pluto.SqlQueryEvent = query
+		fmt.Println(pluto.SqlQueryEvent)
 	*/
 	return nil
 }
 
-func (app *App) InitDB() error {
+func (app *Pluto) initDB() error {
 
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", app.Config.User, app.Config.Password, app.Config.Host, app.Config.Port, app.Config.DBName)
 
@@ -71,11 +89,26 @@ func (app *App) InitDB() error {
 	return nil
 }
 
-func (app *App) CloseAllDBs() {
+func (app *Pluto) closeAllDBs() {
 	if app.ImageDB != nil {
 		app.ImageDB.Close()
 	}
 	if app.UserDB != nil {
 		app.UserDB.Close()
 	}
+}
+
+func (app *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.HandlerFunc) {
+	group := rg.Group("/images", middlewares...) // apply Uranus-provided middleware
+
+	group.POST("/", postHandler)
+	group.GET("/:id", getHandler)
+}
+
+func postHandler(c *gin.Context) {
+	// TODO: This is for demo purpose only
+}
+
+func getHandler(c *gin.Context) {
+	// TODO: This is for demo purpose only
 }

@@ -20,7 +20,6 @@ import (
 	"image/png"
 	_ "image/png"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -438,6 +437,7 @@ func serveImageByID(c *gin.Context) {
 	c.Data(200, "image/"+typeStr, buf.Bytes())
 }
 
+/*
 func main() {
 	configFileName := "config.json" // Default config file name
 	if len(os.Args) > 1 {
@@ -449,12 +449,12 @@ func main() {
 		panic(err)
 	}
 
-	err = app.GApp.PrepareSql()
+	err = app.GApp.prepareSql()
 	if err != nil {
 		panic(err)
 	}
 
-	app.GApp.InitDB()
+	app.GApp.initDB()
 	defer app.GApp.ImageDB.Close()
 
 	// Create upload dirs
@@ -482,3 +482,4 @@ func main() {
 		log.Fatalf("Failed to run server: %v", err)
 	}
 }
+*/
