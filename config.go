@@ -6,33 +6,29 @@ import (
 
 // Config holds database configuration details
 type Config struct {
-	Host              string `json:"host"`
-	Port              int    `json:"port"`
-	User              string `json:"user"`
-	Password          string `json:"password"`
-	DBName            string `json:"dbname"`
-	DBSchema          string `json:"dbschema"`
-	SSLMode           string `json:"sslmode"`
-	ImageUploadDir    string `json:"image_upload_dir"`
-	ImageCacheDir     string `json:"image_cache_dir"`
-	UserDBSchema      string `json:"userdb_shema"`
-	UserDBTable       string `json:"userdb_table"`
-	UserDBLoginColumn string `json:"userdb_login_column"`
-	UserDBHashColumn  string `json:"userdb_hash_column"`
+	BaseApiUrl    string `json:"base_api_url"`
+	DbHost        string `json:"db_host"`
+	DbPort        int    `json:"db_port"`
+	DbUser        string `json:"db_user"`
+	DbPassword    string `json:"db_password"`
+	DbName        string `json:"db_name"`
+	DbSchema      string `json:"db_schema"`
+	SSLMode       string `json:"ssl_mode"`
+	PlutoVerbose  bool   `json:"pluto_verbose"`
+	PlutoImageDir string `json:"pluto_image_dir"`
+	PlutoCacheDir string `json:"pluto_cache_dir"`
 }
 
 func (config Config) Print() {
-	fmt.Println("Config")
-	fmt.Printf("  Host: %s\n", config.Host)
-	fmt.Printf("  Port: %d\n", config.Port)
-	fmt.Printf("  User: %s\n", config.User)
-	fmt.Printf("  DBName: %s\n", config.DBName)
-	fmt.Printf("  DBSchema: %s\n", config.DBSchema)
-	fmt.Printf("  SSL mode: %s\n", config.SSLMode)
-	fmt.Printf("  ImageUploadDir: %s\n", config.ImageUploadDir)
-	fmt.Printf("  ImageCacheDir: %s\n", config.ImageCacheDir)
-	fmt.Printf("  UserDBSchema: %s\n", config.UserDBSchema)
-	fmt.Printf("  UserDBTable: %s\n", config.UserDBTable)
-	fmt.Printf("  UserDBLoginColumn: %s\n", config.UserDBLoginColumn)
-	fmt.Printf("  UserDBHashColumn: %s\n", config.UserDBHashColumn)
+	fmt.Println("pluto Config")
+	fmt.Printf("  base_api_url: %s\n", config.BaseApiUrl)
+	fmt.Printf("  db_host: %s\n", config.DbHost)
+	fmt.Printf("  db_port: %d\n", config.DbPort)
+	fmt.Printf("  db_user: %s\n", config.DbUser)
+	fmt.Printf("  db_name: %s\n", config.DbName)
+	fmt.Printf("  db_schema: %s\n", config.DbSchema)
+	fmt.Printf("  ssl_mode: %s\n", config.SSLMode)
+	fmt.Printf("  pluto_verbose: %t\n", config.PlutoVerbose)
+	fmt.Printf("  pluto_image_dir: %s\n", config.PlutoImageDir)
+	fmt.Printf("  pluto_cache_dir: %s\n", config.PlutoCacheDir)
 }

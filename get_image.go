@@ -3,12 +3,9 @@ package pluto
 import (
 	"bytes"
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"github.com/chai2010/webp"
 	"github.com/gin-gonic/gin"
-	pluto_image "github.com/sndcds/pluto/pluto-image"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -19,7 +16,7 @@ import (
 	"strings"
 )
 
-func serveImageById(c *gin.Context) {
+func getImageHandler(c *gin.Context) {
 	params := c.Request.URL.Query()
 	var paramData [11]Param // Same order as paramKeys
 
@@ -35,7 +32,7 @@ func serveImageById(c *gin.Context) {
 
 	id, err := strconv.Atoi(c.Query("id"))
 	if err != nil {
-		c.String(400, "Invalid image ID")
+		c.JSON(400, gin.H{"error": "Invalid image id"})
 		return
 	}
 
@@ -55,7 +52,7 @@ func serveImageById(c *gin.Context) {
 	if !(width > 0 && height > 0) && ratioStr != "" {
 		aspectRatio, err = ParseAspectRatio(ratioStr)
 		if err != nil || aspectRatio <= 0 {
-			c.String(400, "Invalid ratio format. Use format like '3by2'")
+			c.JSON(400, gin.H{"error": "Invalid ratio format. Use format like '3by2'"})
 			return
 		}
 	}
@@ -117,44 +114,61 @@ func serveImageById(c *gin.Context) {
 		}
 	}
 
-	imageReceipt := fmt.Sprintf("%4x_%s_%s", id, paramCode, paramValues)
+	imageReceipt := fmt.Sprintf("%x_%s_%s", id, paramCode, paramValues)
 
 	// fmt.Printf("paramData: %+v\n", paramData)
 	// fmt.Println("paramCode:", paramCode)
 	// fmt.Println("paramValues:", paramValues)
 	fmt.Println("imageReceipt:", imageReceipt)
 
-	// Check if cached version exists
-	var cacheId int = -1
-	var mimeType string
-	err = Singleton.Db.QueryRow(context.Background(), `
-				SELECT id, mime_type FROM uranus.pluto_cache WHERE receipt = $1
-			`, imageReceipt).Scan(&cacheId, &mimeType)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// c.String(404, "Cached image not found")
-		} else {
-			// c.String(500, "Database error: "+err.Error())
-		}
-	}
+	cacheFileName := imageReceipt + "." + typeStr
+	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, cacheFileName)
+	fmt.Println("cacheFilePath:", cacheFilePath, "cacheFileName:", cacheFileName)
 
-	fmt.Println("cacheId:", cacheId)
-	fmt.Println("id:", id)
-
-	if cacheId >= 0 {
-		cachedImgPath := filepath.Join(Singleton.Config.PlutoCacheDir, imageReceipt) + "." + mimeType
-		c.Header("Content-Disposition", `inline; filename="`+imageReceipt+`"`)
-		c.File(cachedImgPath)
+	_, err = os.Stat(cacheFilePath)
+	if err == nil {
+		// File exists
+		c.JSON(200, gin.H{
+			"status": "ready",
+			"url":    Singleton.Config.BaseApiUrl + "/api/image/file/" + cacheFileName,
+		})
 		return
 	}
 
+	/*
+		// Check if cached version exists
+		var cacheId int = -1
+		var mimeType string
+		err = Singleton.Db.QueryRow(context.Background(), `
+					SELECT id, mime_type FROM uranus.pluto_cache WHERE receipt = $1
+				`, imageReceipt).Scan(&cacheId, &mimeType)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				c.String(404, "Cached image not found")
+			} else {
+				c.String(500, "Database error: "+err.Error())
+			}
+		}
+
+
+		fmt.Println("cacheId:", cacheId)
+		fmt.Println("id:", id)
+
+		if cacheId >= 0 {
+			cachedImgPath := filepath.Join(Singleton.Config.PlutoCacheDir, imageReceipt) + "." + mimeType
+			c.Header("Content-Disposition", `inline; filename="`+imageReceipt+`"`)
+			c.File(cachedImgPath)
+			return
+		}
+	*/
+
 	// Fetch file metadata
-	var fileName, genFileName string
+	var fileName, genFileName, mimeType string
 	err = Singleton.Db.QueryRow(context.Background(), `
 		SELECT file_name, gen_file_name, mime_type FROM uranus.pluto_image WHERE id = $1
 	`, id).Scan(&fileName, &genFileName, &mimeType)
 	if err != nil {
-		c.String(404, "Image not found: %s", err.Error())
+		c.JSON(400, gin.H{"error": "Image not found"})
 		return
 	}
 
@@ -166,33 +180,33 @@ func serveImageById(c *gin.Context) {
 	imgPath := filepath.Join(Singleton.Config.PlutoImageDir, genFileName)
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
-		c.String(500, "Failed to read image: %s", imgPath)
+		c.JSON(500, gin.H{"error": "Failed to read image"})
 		return
 	}
 	img, _, err := image.Decode(bytes.NewReader(fileBytes))
 	if err != nil {
-		c.String(500, "Invalid image format")
+		c.JSON(500, gin.H{"error": "Invalid image format"})
 		return
 	}
 
 	// Apply cropping
 	if width > 0 || height > 0 || aspectRatio > 0 {
-		img = pluto_image.CropToAspectAdvanced(img, modeStr, aspectRatio, float64(focusX)/10000, float64(focusY)/10000, width, height)
+		img = CropToAspectAdvanced(img, modeStr, aspectRatio, float64(focusX)/10000, float64(focusY)/10000, width, height)
 	}
 
 	var buf bytes.Buffer
-	var ext string
+	// var ext string
 	switch typeStr {
 	case "jpeg", "jpg":
-		ext = ".jpg"
+		// ext = ".jpg"
 		typeStr = "jpg"
 		options := &jpeg.Options{Quality: quality}
 		jpeg.Encode(&buf, img, options)
 	case "png":
-		ext = ".png"
+		// ext = ".png"
 		png.Encode(&buf, img)
 	case "webp":
-		ext = ".webp"
+		// ext = ".webp"
 		var options *webp.Options
 		if lossless {
 			options = &webp.Options{Lossless: true}
@@ -205,16 +219,17 @@ func serveImageById(c *gin.Context) {
 		}
 		err := webp.Encode(&buf, img, options)
 		if err != nil {
-			c.String(http.StatusInternalServerError, "WebP encode failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "WebP encode failed"})
 			return
 		}
 	default:
-		c.String(415, "Unsupported image format")
+		c.JSON(415, gin.H{"error": "Unsupported image format"})
 		return
 	}
 
-	if cacheId < 0 {
-		cachedImgPath := filepath.Join(Singleton.Config.PlutoImageDir, imageReceipt) + "." + typeStr
+	{
+		cachedImgPath := filepath.Join(Singleton.Config.PlutoCacheDir, imageReceipt) + "." + typeStr
+		fmt.Println(".... cachedImgPath:", cachedImgPath)
 
 		// Save the generated image bytes to the cache path
 		err := os.WriteFile(cachedImgPath, buf.Bytes(), 0644)
@@ -234,12 +249,32 @@ func serveImageById(c *gin.Context) {
 		}
 	}
 
-	// Replace extension in fileName (if any) with correct one
-	baseName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	finalFileName := baseName + ext
+	/*
+		// Replace extension in fileName (if any) with correct one
+		baseName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+		finalFileName := baseName + ext
+		// Serve image
+		c.Header("Content-Type", "image/"+typeStr)
+		c.Header("Content-Disposition", `inline; filename="`+finalFileName+`"`)
+		c.Data(200, "image/"+typeStr, buf.Bytes())
 
-	// Serve image
-	c.Header("Content-Type", "image/"+typeStr)
-	c.Header("Content-Disposition", `inline; filename="`+finalFileName+`"`)
-	c.Data(200, "image/"+typeStr, buf.Bytes())
+		{
+			"status": "ready",
+			"url": "/cache/abc123.webp"
+		}
+	*/
+
+	if _, err := os.Stat(cacheFilePath); err == nil {
+		// File exists
+		c.JSON(200, gin.H{
+			"status": "ready",
+			"url":    Singleton.Config.BaseApiUrl + "/api/image/file/" + cacheFileName,
+		})
+		return
+	}
+
+	// Not yet generated
+	c.JSON(200, gin.H{
+		"status": "generating",
+	})
 }

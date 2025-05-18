@@ -1,4 +1,4 @@
-module Pluto
+module github.com/sndcds/pluto
 
 go 1.23.0
 

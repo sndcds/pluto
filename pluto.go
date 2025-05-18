@@ -1,42 +1,73 @@
 package pluto
 
 import (
-	"context"
+	_ "context"
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/pgxpool"
 	"io/ioutil"
-	"log"
+	_ "log"
 	"os"
 )
 
 type Pluto struct {
-	ImageDB *pgxpool.Pool
-	UserDB  *pgxpool.Pool
-	Config  Config
+	Config   Config
+	Db       *pgxpool.Pool
+	ImageDir string
+	Verbose  bool
 }
 
 var Singleton *Pluto
 
-func (app *Pluto) Init(configFilePath string) error {
-	err := app.loadConfig(configFilePath)
+// New creates and initializes a new Pluto instance
+func New(configFilePath string, db *pgxpool.Pool, verbose bool) (*Pluto, error) {
+	pluto := &Pluto{}
+	pluto.Verbose = verbose
+	pluto.Db = db
+
+	pluto.Log("loading configuration")
+	if err := pluto.loadConfig(configFilePath); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	pluto.Log("prepare sql")
+	if err := pluto.prepareSql(); err != nil {
+		return nil, fmt.Errorf("failed to prepare SQL: %w", err)
+	}
+
+	Singleton = pluto
+
+	return pluto, nil
+}
+
+func (pluto *Pluto) Log(msg string) {
+	if pluto.Verbose {
+		fmt.Println("pluto:", msg)
+	}
+}
+
+/*
+func (pluto *pluto) Init(configFilePath string) error {
+	err := pluto.loadConfig(configFilePath)
 	if err != nil {
 		panic(err)
 	}
 
-	err = app.prepareSql()
+	err = pluto.prepareSql()
 	if err != nil {
 		panic(err)
 	}
 
-	app.initDB()
-	defer app.ImageDB.Close()
+	pluto.initDB()
+	defer pluto.ImageDB.Close()
 
 	return nil
 }
+*/
 
-func (app *Pluto) loadConfig(configFilePath string) error {
+func (pluto *Pluto) loadConfig(configFilePath string) error {
 	file, err := os.Open(configFilePath)
 	if err != nil {
 		return err
@@ -48,67 +79,24 @@ func (app *Pluto) loadConfig(configFilePath string) error {
 		return err
 	}
 
-	err = json.Unmarshal(bytes, &app.Config)
+	err = json.Unmarshal(bytes, &pluto.Config)
 	if err != nil {
 		return err
 	}
 
-	app.Config.Print()
+	pluto.Config.Print()
+
 	return nil
 }
 
-func (app *Pluto) prepareSql() error {
-	/*
-		// Read the SQL file
-		content, err := os.ReadFile("queries/queryEvent.sql")
-		if err != nil {
-			panic(fmt.Errorf("failed to read file: %w", err))
-		}
-
-		// Convert to string and replace {{schema}} with actual schema name
-		query := string(content)
-		query = strings.ReplaceAll(query, "{{schema}}", pluto.Config.DBSchema)
-		pluto.SqlQueryEvent = query
-		fmt.Println(pluto.SqlQueryEvent)
-	*/
+func (pluto *Pluto) prepareSql() error {
 	return nil
 }
 
-func (app *Pluto) initDB() error {
-
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", app.Config.User, app.Config.Password, app.Config.Host, app.Config.Port, app.Config.DBName)
-
-	var err error
-	app.ImageDB, err = pgxpool.New(context.Background(), connStr)
-	if err != nil {
-		log.Fatalf("Unable to create connection pool: %v\n", err)
-		return err
-	}
-
-	fmt.Println("Database connection pool initialized!")
-	return nil
-}
-
-func (app *Pluto) closeAllDBs() {
-	if app.ImageDB != nil {
-		app.ImageDB.Close()
-	}
-	if app.UserDB != nil {
-		app.UserDB.Close()
-	}
-}
-
-func (app *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.HandlerFunc) {
-	group := rg.Group("/images", middlewares...) // apply Uranus-provided middleware
-
-	group.POST("/", postHandler)
-	group.GET("/:id", getHandler)
-}
-
-func postHandler(c *gin.Context) {
-	// TODO: This is for demo purpose only
-}
-
-func getHandler(c *gin.Context) {
-	// TODO: This is for demo purpose only
+func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.HandlerFunc) {
+	group := rg.Group("/image")
+	group.GET("/get", getImageHandler)
+	group.GET("/file/:file", getFileHandler)
+	protected := group.Group("/", middlewares...)
+	protected.POST("/upload", uploadHandler)
 }
