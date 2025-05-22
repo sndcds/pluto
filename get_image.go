@@ -29,6 +29,8 @@ func getImageHandler(gc *gin.Context) {
 		}
 	}
 
+	Singleton.Log("getImageHandler 1")
+
 	id, err := strconv.Atoi(gc.Query("id"))
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Invalid image id")
@@ -44,6 +46,8 @@ func getImageHandler(gc *gin.Context) {
 	focusX := atoiOrDefaultClamped(paramData[paramIndex["focusx"]], 5000, 0, 10000)
 	focusY := atoiOrDefaultClamped(paramData[paramIndex["focusy"]], 5000, 0, 10000)
 	_, lossless := gc.GetQuery("lossless")
+
+	Singleton.Log(modeStr)
 
 	var aspectRatio float64
 	if !(width > 0 && height > 0) && ratioStr != "" {
@@ -103,11 +107,15 @@ func getImageHandler(gc *gin.Context) {
 	cacheFileName := imageReceipt + "." + typeStr
 	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, cacheFileName)
 
+	Singleton.Log(imageReceipt)
+
 	if _, err := os.Stat(cacheFilePath); err == nil {
 		gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
 		gc.File(cacheFilePath)
 		return
 	}
+
+	Singleton.Log("Render")
 
 	var fileName, genFileName, mimeType string
 	err = Singleton.Db.QueryRow(context.Background(), `
@@ -123,6 +131,7 @@ func getImageHandler(gc *gin.Context) {
 	}
 
 	imgPath := filepath.Join(Singleton.Config.PlutoImageDir, genFileName)
+	Singleton.Log("imgPath")
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
 		gc.String(http.StatusInternalServerError, "Failed to read image")
