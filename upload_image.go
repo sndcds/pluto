@@ -14,29 +14,29 @@ import (
 	"strconv"
 )
 
-func uploadHandler(c *gin.Context) {
+func uploadHandler(gc *gin.Context) {
 	// Parse form values from the POST request
 	meta := ImageMetadata{
-		License:   c.PostForm("license"),
-		CreatedBy: c.PostForm("created_by"),
-		Copyright: c.PostForm("copyright"),
-		AltText:   c.PostForm("alt_text"),
-		UserID:    c.PostForm("user_id"),
+		License:   gc.PostForm("license"),
+		CreatedBy: gc.PostForm("created_by"),
+		Copyright: gc.PostForm("copyright"),
+		AltText:   gc.PostForm("alt_text"),
+		UserID:    gc.PostForm("user_id"),
 	}
 
 	// Parse focus_x and focus_y as float64
 	var err error
-	if focusXStr := c.PostForm("focus_x"); focusXStr != "" {
+	if focusXStr := gc.PostForm("focus_x"); focusXStr != "" {
 		meta.FocusX, err = strconv.ParseFloat(focusXStr, 64)
 		if err != nil {
-			c.String(http.StatusBadRequest, "Invalid focus_x")
+			gc.String(http.StatusBadRequest, "Invalid focus_x")
 			return
 		}
 	}
-	if focusYStr := c.PostForm("focus_y"); focusYStr != "" {
+	if focusYStr := gc.PostForm("focus_y"); focusYStr != "" {
 		meta.FocusY, err = strconv.ParseFloat(focusYStr, 64)
 		if err != nil {
-			c.String(http.StatusBadRequest, "Invalid focus_y")
+			gc.String(http.StatusBadRequest, "Invalid focus_y")
 			return
 		}
 	}
@@ -44,16 +44,16 @@ func uploadHandler(c *gin.Context) {
 	// Debug print
 	fmt.Printf("Metadata received: %+v\n", meta)
 
-	file, err := c.FormFile("file_input")
+	file, err := gc.FormFile("file_input")
 	if err != nil {
-		c.String(400, "File upload error: %s", err.Error())
+		gc.String(400, "File upload error: %s", err.Error())
 		return
 	}
 
 	// Open the uploaded file
 	src, err := file.Open()
 	if err != nil {
-		c.String(500, "Failed to open file: %s", err.Error())
+		gc.String(500, "Failed to open file: %s", err.Error())
 		return
 	}
 	defer src.Close()
@@ -61,14 +61,14 @@ func uploadHandler(c *gin.Context) {
 	// Read file into buffer for reuse
 	buf := new(bytes.Buffer)
 	if _, err := io.Copy(buf, src); err != nil {
-		c.String(500, "Failed to read file: %s", err.Error())
+		gc.String(500, "Failed to read file: %s", err.Error())
 		return
 	}
 
 	// Decode image config (dimensions and format)
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(buf.Bytes()))
 	if err != nil {
-		c.String(500, "Invalid image: %s", err.Error())
+		gc.String(500, "Invalid image: %s", err.Error())
 		return
 	}
 
@@ -89,14 +89,14 @@ func uploadHandler(c *gin.Context) {
 	generatedFileName, err := GenerateImageFilename(originalFileName)
 	fmt.Println("generatedFileName:", generatedFileName)
 	if err != nil {
-		c.String(500, "Failed to generate image filename: %s", err.Error())
+		gc.String(500, "Failed to generate image filename: %s", err.Error())
 		return
 	}
 
 	// Save image to disk
 	dstPath := Singleton.Config.PlutoImageDir + "/" + generatedFileName
 	if err := os.WriteFile(dstPath, buf.Bytes(), 0644); err != nil {
-		c.String(500, "Failed to save file: %s", err.Error())
+		gc.String(500, "Failed to save file: %s", err.Error())
 		return
 	}
 
@@ -118,11 +118,11 @@ func uploadHandler(c *gin.Context) {
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, originalFileName, generatedFileName, cfg.Width, cfg.Height, format, exifData, meta.License, meta.CreatedBy, meta.Copyright, meta.AltText, userId)
 	if err != nil {
-		c.String(500, "DB insert failed: %s", err.Error())
+		gc.String(500, "DB insert failed: %s", err.Error())
 		return
 	}
 
 	fmt.Println("INSERT INTO uranus.pluto_image done")
 
-	c.String(200, "✅ Uploaded: %s (saved as %s)", originalFileName, generatedFileName)
+	gc.String(200, "✅ Uploaded: %s (saved as %s)", originalFileName, generatedFileName)
 }

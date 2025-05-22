@@ -11,13 +11,13 @@ import (
 )
 
 type ImageMetadata struct {
+	UserID    string
+	License   string
 	CreatedBy string
 	Copyright string
-	License   string
 	AltText   string
 	FocusX    float64
 	FocusY    float64
-	UserID    string
 }
 
 type exifWalker struct {
@@ -131,7 +131,7 @@ func main() {
 	r.LoadHTMLGlob("templates/*")
 
 	// Route to serve upload form
-	r.GET("/upload-image", func(c *gin.Context) {
+	r.GET("/upload-image", func(gc *gin.Context) {
 		c.HTML(http.StatusOK, "upload-image.html", nil)
 	})
 
