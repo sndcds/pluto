@@ -119,7 +119,7 @@ func getImageHandler(gc *gin.Context) {
 
 	var fileName, genFileName, mimeType string
 	err = Singleton.Db.QueryRow(context.Background(), `
-		SELECT file_name, gen_file_name, mime_type FROM uranus.pluto_image WHERE id = $1
+		SELECT file_name, gen_file_name, mime_type FROM uranus2.pluto_image WHERE id = $1
 	`, id).Scan(&fileName, &genFileName, &mimeType)
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Image not found")
@@ -174,7 +174,7 @@ func getImageHandler(gc *gin.Context) {
 	err = os.WriteFile(cacheFilePath, buf.Bytes(), 0644)
 	if err == nil {
 		_, _ = Singleton.Db.Exec(context.Background(), `
-			INSERT INTO uranus.pluto_cache (receipt, image_id, mime_type)
+			INSERT INTO uranus2.pluto_cache (receipt, image_id, mime_type)
 			VALUES ($1, $2, $3)
 		`, imageReceipt, id, typeStr)
 	}

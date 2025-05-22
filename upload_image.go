@@ -114,7 +114,7 @@ func uploadHandler(gc *gin.Context) {
 	userId := 13 // TODO!
 	// Insert metadata into DB
 	_, err = Singleton.Db.Exec(context.Background(), `
-        INSERT INTO uranus.pluto_image (file_name, gen_file_name, width, height, mime_type, exif, license, created_by, copyright, alt_text, user_id)
+        INSERT INTO uranus2.pluto_image (file_name, gen_file_name, width, height, mime_type, exif, license, created_by, copyright, alt_text, user_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, originalFileName, generatedFileName, cfg.Width, cfg.Height, format, exifData, meta.License, meta.CreatedBy, meta.Copyright, meta.AltText, userId)
 	if err != nil {
