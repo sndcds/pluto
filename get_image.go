@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/chai2010/webp"
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -118,9 +119,8 @@ func getImageHandler(gc *gin.Context) {
 	Singleton.Log("Render")
 
 	var fileName, genFileName, mimeType string
-	err = Singleton.Db.QueryRow(context.Background(), `
-		SELECT file_name, gen_file_name, mime_type FROM uranus2.pluto_image WHERE id = $1
-	`, id).Scan(&fileName, &genFileName, &mimeType)
+	query := fmt.Sprintf(`SELECT file_name, gen_file_name, mime_type FROM %s.pluto_image WHERE id = $1`, pq.QuoteIdentifier(Singleton.Config.DbSchema))
+	err = Singleton.Db.QueryRow(context.Background(), query, id).Scan(&fileName, &genFileName, &mimeType)
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Image not found")
 		return
@@ -173,10 +173,11 @@ func getImageHandler(gc *gin.Context) {
 	// Save to cache
 	err = os.WriteFile(cacheFilePath, buf.Bytes(), 0644)
 	if err == nil {
-		_, _ = Singleton.Db.Exec(context.Background(), `
-			INSERT INTO uranus2.pluto_cache (receipt, image_id, mime_type)
-			VALUES ($1, $2, $3)
-		`, imageReceipt, id, typeStr)
+		query = fmt.Sprintf(`
+			INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
+			VALUES ($1, $2, $3)`,
+			pq.QuoteIdentifier(Singleton.Config.DbSchema))
+		_, _ = Singleton.Db.Exec(context.Background(), query, imageReceipt, id, typeStr)
 	}
 
 	gc.Header("Content-Type", "image/"+typeStr)

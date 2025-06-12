@@ -13,10 +13,11 @@ import (
 )
 
 type Pluto struct {
-	Config   Config
-	Db       *pgxpool.Pool
-	ImageDir string
-	Verbose  bool
+	Config        Config
+	Db            *pgxpool.Pool
+	Verbose       bool
+	ImageDir      string
+	SqlQueryEvent string
 }
 
 var Singleton *Pluto
