@@ -98,6 +98,6 @@ func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.Handl
 	group := rg.Group("/image")
 	group.GET("/get", getImageHandler)
 	group.GET("/file/:file", getFileHandler)
-	protected := group.Group("/", middlewares...)
-	protected.POST("/upload", uploadHandler)
+	// protected := group.Group("/", middlewares...)
+	// protected.POST("/upload", UploadImageHandler)
 }

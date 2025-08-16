@@ -15,14 +15,13 @@ import (
 	"strconv"
 )
 
-func uploadHandler(gc *gin.Context) {
+func UploadImageHandler(gc *gin.Context) {
 	// Parse form values from the POST request
 	meta := ImageMetadata{
 		License:   gc.PostForm("license"),
-		CreatedBy: gc.PostForm("created_by"),
+		CreatedBy: gc.PostForm("creator"),
 		Copyright: gc.PostForm("copyright"),
 		AltText:   gc.PostForm("alt_text"),
-		UserID:    gc.PostForm("user_id"),
 	}
 
 	// Parse focus_x and focus_y as float64
@@ -34,6 +33,7 @@ func uploadHandler(gc *gin.Context) {
 			return
 		}
 	}
+
 	if focusYStr := gc.PostForm("focus_y"); focusYStr != "" {
 		meta.FocusY, err = strconv.ParseFloat(focusYStr, 64)
 		if err != nil {
@@ -44,6 +44,8 @@ func uploadHandler(gc *gin.Context) {
 
 	// Debug print
 	fmt.Printf("Metadata received: %+v\n", meta)
+
+	return
 
 	file, err := gc.FormFile("file_input")
 	if err != nil {
