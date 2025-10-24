@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/chai2010/webp"
-	"github.com/gin-gonic/gin"
-	"github.com/lib/pq"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -15,11 +12,22 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/chai2010/webp"
+	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 )
 
 func getImageHandler(gc *gin.Context) {
 	params := gc.Request.URL.Query()
 	var paramData [11]Param // Same order as paramKeys
+
+	idStr := gc.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid image id: %v", err)})
+		return
+	}
 
 	for i, key := range paramKeys {
 		if values, exists := params[key]; exists && len(values) > 0 {
@@ -32,20 +40,14 @@ func getImageHandler(gc *gin.Context) {
 
 	Singleton.Log("getImageHandler 1")
 
-	id, err := strconv.Atoi(gc.Query("id"))
-	if err != nil {
-		gc.String(http.StatusBadRequest, "Invalid image id")
-		return
-	}
-
 	modeStr := getOrDefault(paramData[paramIndex["modeStr"]], "center")
 	typeStr := getOrDefault(paramData[paramIndex["type"]], "")
 	quality := atoiOrDefaultClamped(paramData[paramIndex["quality"]], 85, 0, 100)
 	width := atoiOrDefaultClamped(paramData[paramIndex["width"]], 0, 0, 4096)
 	height := atoiOrDefaultClamped(paramData[paramIndex["height"]], 0, 0, 4096)
 	ratioStr := getOrDefault(paramData[paramIndex["ratio"]], "")
-	focusX := atoiOrDefaultClamped(paramData[paramIndex["focusx"]], 5000, 0, 10000)
-	focusY := atoiOrDefaultClamped(paramData[paramIndex["focusy"]], 5000, 0, 10000)
+	focusX := atoiOrDefaultClamped(paramData[paramIndex["focusx"]], 0, -100, 100)
+	focusY := atoiOrDefaultClamped(paramData[paramIndex["focusy"]], 0, -100, 100)
 	_, lossless := gc.GetQuery("lossless")
 
 	Singleton.Log(modeStr)

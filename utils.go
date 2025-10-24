@@ -4,12 +4,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"github.com/disintegration/imaging"
-	"github.com/nfnt/resize"
 	"image"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/disintegration/imaging"
+	"github.com/nfnt/resize"
 )
 
 // GenerateImageFilename returns a securely generated random filename
@@ -34,20 +35,14 @@ import (
 //   - A string containing the generated filename (randomHex + original extension).
 //   - An error if the secure random number generation fails.
 func GenerateImageFilename(originalName string) (string, error) {
-	// Generate 16 random bytes (128 bits)
-	bytes := make([]byte, 16)
+	bytes := make([]byte, 16) // Generate 16 random bytes (128 bits)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
 
-	// Convert to hex string
-	randomHex := hex.EncodeToString(bytes)
-
-	// Extract original extension (e.g. ".jpg")
-	ext := filepath.Ext(originalName)
-
-	// Combine hex ID with original extension
-	filename := fmt.Sprintf("%s%s", randomHex, ext)
+	randomHex := hex.EncodeToString(bytes)          // Convert to hex string
+	ext := filepath.Ext(originalName)               // Extract original extension
+	filename := fmt.Sprintf("%s%s", randomHex, ext) // Combine hex ID with original extension
 
 	return filename, nil
 }

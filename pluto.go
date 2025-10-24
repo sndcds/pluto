@@ -4,12 +4,13 @@ import (
 	_ "context"
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/pgxpool"
 	"io/ioutil"
 	_ "log"
 	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Pluto struct {
@@ -96,8 +97,7 @@ func (pluto *Pluto) prepareSql() error {
 
 func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.HandlerFunc) {
 	group := rg.Group("/image")
-	group.GET("/get", getImageHandler)
+	group.GET("/:id/", getImageHandler)
+	// group.GET("/get", getImageHandler)
 	group.GET("/file/:file", getFileHandler)
-	// protected := group.Group("/", middlewares...)
-	// protected.POST("/upload", UploadImageHandler)
 }
