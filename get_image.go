@@ -162,11 +162,11 @@ func getImageHandler(gc *gin.Context) {
 		}
 		err = webp.Encode(&buf, img, options)
 	default:
-		gc.String(http.StatusUnsupportedMediaType, "Unsupported image format")
+		gc.JSON(http.StatusUnsupportedMediaType, gin.H{"error": fmt.Sprintf("Unsupported image format: image/%s", typeStr)})
 		return
 	}
 	if err != nil {
-		gc.String(http.StatusInternalServerError, "Failed to encode image")
+		gc.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to encode image: /%v", err.Error())})
 		return
 	}
 
