@@ -41,7 +41,7 @@ func getImageHandler(gc *gin.Context) {
 	Singleton.Log("getImageHandler 1")
 
 	modeStr := getOrDefault(paramData[paramIndex["modeStr"]], "center")
-	typeStr := getOrDefault(paramData[paramIndex["type"]], "")
+	typeStr := strings.ToLower(strings.TrimSpace(getOrDefault(paramData[paramIndex["type"]], "")))
 	quality := atoiOrDefaultClamped(paramData[paramIndex["quality"]], 85, 0, 100)
 	width := atoiOrDefaultClamped(paramData[paramIndex["width"]], 0, 0, 4096)
 	height := atoiOrDefaultClamped(paramData[paramIndex["height"]], 0, 0, 4096)
@@ -49,8 +49,6 @@ func getImageHandler(gc *gin.Context) {
 	focusX := atoiOrDefaultClamped(paramData[paramIndex["focusx"]], 0, -100, 100)
 	focusY := atoiOrDefaultClamped(paramData[paramIndex["focusy"]], 0, -100, 100)
 	_, lossless := gc.GetQuery("lossless")
-
-	Singleton.Log(modeStr)
 
 	var aspectRatio float64
 	if !(width > 0 && height > 0) && ratioStr != "" {
@@ -118,8 +116,6 @@ func getImageHandler(gc *gin.Context) {
 		return
 	}
 
-	Singleton.Log("Render")
-
 	var fileName, genFileName, mimeType string
 	query := fmt.Sprintf(`SELECT file_name, gen_file_name, mime_type FROM %s.pluto_image WHERE id = $1`, pq.QuoteIdentifier(Singleton.Config.DbSchema))
 	err = Singleton.Db.QueryRow(context.Background(), query, id).Scan(&fileName, &genFileName, &mimeType)
@@ -133,7 +129,7 @@ func getImageHandler(gc *gin.Context) {
 	}
 
 	imgPath := filepath.Join(Singleton.Config.PlutoImageDir, genFileName)
-	Singleton.Log("imgPath")
+
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
 		gc.String(http.StatusInternalServerError, "Failed to read image")
@@ -152,12 +148,14 @@ func getImageHandler(gc *gin.Context) {
 
 	var buf bytes.Buffer
 	switch typeStr {
-	case "jpeg", "jpg":
+	case "image/jpeg", "jpeg", "jpg":
 		typeStr = "jpg"
 		err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
-	case "png":
+	case "image/png", "png":
+		typeStr = "png"
 		err = png.Encode(&buf, img)
-	case "webp":
+	case "image/webp", "webp":
+		typeStr = "webp"
 		options := &webp.Options{Lossless: lossless}
 		if !lossless {
 			options.Quality = float32(quality)
