@@ -24,7 +24,7 @@ type Pluto struct {
 var Singleton *Pluto
 
 // New creates and initializes a new Pluto instance
-func New(configFilePath string, db *pgxpool.Pool, verbose bool) (*Pluto, error) {
+func Initialize(configFilePath string, db *pgxpool.Pool, verbose bool) (*Pluto, error) {
 	pluto := &Pluto{}
 	pluto.Verbose = verbose
 	pluto.Db = db
