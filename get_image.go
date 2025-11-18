@@ -2,7 +2,7 @@ package pluto
 
 import (
 	"bytes"
-	"context"
+
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/chai2010/webp"
 	"github.com/gin-gonic/gin"
@@ -19,113 +17,131 @@ import (
 )
 
 func getImageHandler(gc *gin.Context) {
-	params := gc.Request.URL.Query()
-	var paramData [11]Param // Same order as paramKeys
+	ctx := gc.Request.Context()
 
-	idStr := gc.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid image id: %v", err)})
+	imageId, ok := ParamInt(gc, "id")
+	if !ok {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid image ID"})
 		return
 	}
 
-	for i, key := range paramKeys {
-		if values, exists := params[key]; exists && len(values) > 0 {
-			paramData[i] = Param{
-				Exist: true,
-				Value: values[0],
-			}
+	pType := GetUrlQueryParam(gc, "type", String)
+	pFit := GetUrlQueryParam(gc, "fit", String)
+	pQuality := GetUrlQueryParam(gc, "quality", Int)
+	pWidth := GetUrlQueryParam(gc, "width", Int)
+	pHeight := GetUrlQueryParam(gc, "height", Int)
+	pRatio := GetUrlQueryParam(gc, "ratio", Rational)
+	pFocusX := GetUrlQueryParam(gc, "focusx", Float)
+	pFocusY := GetUrlQueryParam(gc, "focusy", Float)
+	pLossless := GetUrlQueryParam(gc, "lossless", Boolean)
+
+	typeStr := pType.ValueOr("jpg")
+	quality := pQuality.IntOr(100)
+
+	fmt.Println("..................")
+	pType.Println()
+	pFit.Println()
+	pQuality.Println()
+	pWidth.Println()
+	pHeight.Println()
+	pRatio.Println()
+	pFocusX.Println()
+	pFocusY.Println()
+	pLossless.Println()
+
+	if pRatio.Exist && (!pWidth.Exist || !pHeight.Exist) {
+		aspectRatio := pRatio.Float
+		fmt.Println("aspectRatio: ", aspectRatio)
+		if aspectRatio <= 0.0001 {
+			gc.String(http.StatusBadRequest, "Invalid ratio format. Use format like '16:9'")
+			return
 		}
-	}
-
-	Singleton.Log("getImageHandler 1")
-
-	modeStr := getOrDefault(paramData[paramIndex["modeStr"]], "center")
-	typeStr := strings.ToLower(strings.TrimSpace(getOrDefault(paramData[paramIndex["type"]], "")))
-	quality := atoiOrDefaultClamped(paramData[paramIndex["quality"]], 85, 0, 100)
-	width := atoiOrDefaultClamped(paramData[paramIndex["width"]], 0, 0, 4096)
-	height := atoiOrDefaultClamped(paramData[paramIndex["height"]], 0, 0, 4096)
-	ratioStr := getOrDefault(paramData[paramIndex["ratio"]], "")
-	focusX := atoiOrDefaultClamped(paramData[paramIndex["focusx"]], 0, -100, 100)
-	focusY := atoiOrDefaultClamped(paramData[paramIndex["focusy"]], 0, -100, 100)
-	_, lossless := gc.GetQuery("lossless")
-
-	var aspectRatio float64
-	if !(width > 0 && height > 0) && ratioStr != "" {
-		aspectRatio, err = ParseAspectRatio(ratioStr)
-		if err != nil || aspectRatio <= 0 {
-			gc.String(http.StatusBadRequest, "Invalid ratio format. Use format like '3by2'")
+		if pWidth.Exist {
+			pHeight = UrlQueryParam{
+				Name:  "height",
+				Type:  Int,
+				Exist: true,
+				Int64: int64(float64(pWidth.Int64) / aspectRatio),
+			}
+			fmt.Println("New height ...", pHeight.Int())
+		} else if pHeight.Exist {
+			pWidth = UrlQueryParam{
+				Name:  "width",
+				Type:  Int,
+				Exist: true,
+				Int64: int64(float64(pHeight.Int64) / aspectRatio),
+			}
+			fmt.Println("New width ...", pWidth.Int())
+		} else {
+			gc.String(http.StatusBadRequest, "Either width or height must be provided if using ratio")
 			return
 		}
 	}
 
 	var paramCode, paramValues string
-	for i, key := range paramKeys {
-		if paramData[i].Exist {
-			paramCode += paramShortCodes[key]
-			switch i {
-			case paramIndex["modeStr"]:
-				if modeStr == "cover" {
-					paramValues += "01"
-				} else {
-					paramValues += "00"
-				}
-			case paramIndex["type"]:
-				switch typeStr {
-				case "png":
-					paramValues += "01"
-				case "webp":
-					paramValues += "02"
-				default:
-					paramValues += "00"
-				}
-			case paramIndex["quality"]:
-				paramValues += fmt.Sprintf("%02x", quality)
-			case paramIndex["width"]:
-				paramValues += fmt.Sprintf("%04x", width)
-			case paramIndex["height"]:
-				paramValues += fmt.Sprintf("%04x", height)
-			case paramIndex["ratio"]:
-				parts := strings.Split(ratioStr, "by")
-				if len(parts) == 2 {
-					num1, err1 := strconv.Atoi(parts[0])
-					num2, err2 := strconv.Atoi(parts[1])
-					if err1 == nil && err2 == nil {
-						paramValues += fmt.Sprintf("%04x%04x", num1, num2)
-					}
-				}
-			case paramIndex["focusx"]:
-				paramValues += fmt.Sprintf("%04x", focusX)
-			case paramIndex["focusy"]:
-				paramValues += fmt.Sprintf("%04x", focusY)
-			case paramIndex["brightness"], paramIndex["contrast"], paramIndex["saturation"]:
-				paramValues += fmt.Sprintf("%03x", 1000)
-			}
+	if pFit.Exist {
+		paramCode += "f"
+		switch pFit.Value {
+		case "cover":
+			paramValues += "01"
+		default:
+			paramValues += "00"
 		}
 	}
+	if pType.Exist {
+		paramCode += "t"
+		switch pType.Value {
+		case "png":
+			paramValues += "01"
+		case "webp":
+			paramValues += "02"
+		default:
+			paramValues += "00"
+		}
+	}
+	if pQuality.Exist {
+		paramCode += "q"
+		paramValues += fmt.Sprintf("_%02x_", pQuality.Int)
+	}
+	if pWidth.Exist {
+		paramCode += "w"
+		paramValues += fmt.Sprintf("_%04x_", pWidth.Int)
+	}
+	if pHeight.Exist {
+		paramCode += "h"
+		paramValues += fmt.Sprintf("_%04x_", pHeight.Int)
+	}
+	if pFocusX.Exist {
+		paramCode += "x"
+		paramValues += fmt.Sprintf("_%03x_", pFocusX.Int)
+	}
+	if pFocusY.Exist {
+		paramCode += "y"
+		paramValues += fmt.Sprintf("_%03x_", pFocusY.Int)
+	}
 
-	imageReceipt := fmt.Sprintf("%x_%s_%s", id, paramCode, paramValues)
+	imageReceipt := fmt.Sprintf("%x_%s_%s", imageId, paramCode, paramValues)
 	cacheFileName := imageReceipt + "." + typeStr
 	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, cacheFileName)
 
-	Singleton.Log(imageReceipt)
+	fmt.Println("imageReceipt: ", imageReceipt)
+	fmt.Println("cacheFileName: ", cacheFileName)
+	fmt.Println("cacheFilePath: ", cacheFilePath)
 
 	if _, err := os.Stat(cacheFilePath); err == nil {
 		gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
 		gc.File(cacheFilePath)
+		fmt.Println("cacheFile used!")
 		return
 	}
 
 	var fileName, genFileName, mimeType string
-	query := fmt.Sprintf(`SELECT file_name, gen_file_name, mime_type FROM %s.pluto_image WHERE id = $1`, pq.QuoteIdentifier(Singleton.Config.DbSchema))
-	err = Singleton.Db.QueryRow(context.Background(), query, id).Scan(&fileName, &genFileName, &mimeType)
+	sql := fmt.Sprintf(`SELECT file_name, gen_file_name, mime_type FROM %s.pluto_image WHERE id = $1`, pq.QuoteIdentifier(Singleton.Config.DbSchema))
+	fmt.Println(sql)
+	err := Singleton.Db.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType)
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Image not found")
 		return
-	}
-
-	if typeStr == "" {
-		typeStr = mimeType
 	}
 
 	imgPath := filepath.Join(Singleton.Config.PlutoImageDir, genFileName)
@@ -142,8 +158,15 @@ func getImageHandler(gc *gin.Context) {
 		return
 	}
 
-	if width > 0 || height > 0 || aspectRatio > 0 {
-		img = CropToAspectAdvanced(img, modeStr, aspectRatio, float64(focusX)/10000, float64(focusY)/10000, width, height)
+	if pWidth.Exist || pHeight.Exist || pRatio.Exist {
+		img = CropToAspectAdvanced(
+			img,
+			pFit.Value,
+			pRatio.Float,
+			pFocusX.Float,
+			pFocusY.Float,
+			pWidth.Int(),
+			pHeight.Int())
 	}
 
 	var buf bytes.Buffer
@@ -156,8 +179,8 @@ func getImageHandler(gc *gin.Context) {
 		err = png.Encode(&buf, img)
 	case "image/webp", "webp":
 		typeStr = "webp"
-		options := &webp.Options{Lossless: lossless}
-		if !lossless {
+		options := &webp.Options{Lossless: pLossless.Bool}
+		if !pLossless.Bool {
 			options.Quality = float32(quality)
 		}
 		err = webp.Encode(&buf, img, options)
@@ -173,14 +196,15 @@ func getImageHandler(gc *gin.Context) {
 	// Save to cache
 	err = os.WriteFile(cacheFilePath, buf.Bytes(), 0644)
 	if err == nil {
-		query = fmt.Sprintf(`
-			INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
-			VALUES ($1, $2, $3)`,
+		sql = fmt.Sprintf(`
+				INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
+				VALUES ($1, $2, $3)`,
 			pq.QuoteIdentifier(Singleton.Config.DbSchema))
-		_, _ = Singleton.Db.Exec(context.Background(), query, imageReceipt, id, typeStr)
+		_, _ = Singleton.Db.Exec(ctx, sql, imageReceipt, imageId, typeStr)
 	}
 
 	gc.Header("Content-Type", "image/"+typeStr)
 	gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
 	gc.Data(http.StatusOK, "image/"+typeStr, buf.Bytes())
+
 }

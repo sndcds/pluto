@@ -5,13 +5,125 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/disintegration/imaging"
+	"github.com/gin-gonic/gin"
 	"github.com/nfnt/resize"
 )
+
+type UrlParamType int
+
+const (
+	Boolean UrlParamType = iota
+	Int
+	Float
+	Rational
+	String
+)
+
+type UrlQueryParam struct {
+	Name  string
+	Type  UrlParamType
+	Exist bool
+	Err   error
+	Bool  bool
+	Int64 int64
+	Float float64
+	Value string
+}
+
+// Get the raw query parameter
+func GetUrlQueryParam(gc *gin.Context, paramName string, paramType UrlParamType) UrlQueryParam {
+	value, exists := gc.GetQuery(paramName)
+	p := UrlQueryParam{
+		Name:  paramName,
+		Type:  paramType,
+		Exist: exists,
+		Value: value,
+	}
+	switch paramType {
+	case Boolean:
+		p.Bool = exists
+	case Int:
+		p.Int64, p.Err = strconv.ParseInt(p.Value, 10, 64)
+	case Float:
+		p.Float, p.Err = strconv.ParseFloat(p.Value, 64)
+	case Rational:
+		p.Float, p.Err = ParseAspectRatio(value)
+	case String:
+	}
+	return p
+}
+
+func (p UrlQueryParam) Println() {
+	if p.Exist {
+		fmt.Print(p.Name, ": ")
+		if p.Err != nil {
+			fmt.Println("error: ", p.Err.Error())
+		} else {
+			switch p.Type {
+			case Boolean:
+				fmt.Println(p.Bool)
+			case Int:
+				fmt.Println(p.Int64)
+			case Float:
+				fmt.Println(p.Float)
+			case Rational:
+				fmt.Println(p.Float)
+			case String:
+				fmt.Println(p.Value)
+			}
+		}
+	}
+}
+
+func (p UrlQueryParam) ValueOr(def string) string {
+	if p.Exist {
+		return p.Value
+	}
+	return def
+}
+
+func (p UrlQueryParam) Int64Or(def int64) int64 {
+	if p.Exist {
+		return p.Int64
+	}
+	return def
+}
+
+func (p UrlQueryParam) IntOr(def int) int {
+	if p.Exist {
+		return int(p.Int64)
+	}
+	return def
+}
+
+func (p UrlQueryParam) Int() int {
+	if p.Exist {
+		return int(p.Int64)
+	}
+	return 0
+}
+
+func SetInt(p *UrlQueryParam, value int) {
+	if p != nil {
+		p.Exist = true
+		p.Type = Int
+		p.Int64 = int64(value)
+	}
+}
+
+func SetInt64(p *UrlQueryParam, value int64) {
+	if p != nil {
+		p.Exist = true
+		p.Type = Int
+		p.Int64 = value
+	}
+}
 
 // GenerateImageFilename returns a securely generated random filename
 // that preserves the original file's extension.
@@ -48,7 +160,7 @@ func GenerateImageFilename(originalName string) (string, error) {
 }
 
 func ParseAspectRatio(s string) (float64, error) {
-	parts := strings.Split(s, "by")
+	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
 		return 0, fmt.Errorf("invalid ratio")
 	}
@@ -115,7 +227,7 @@ func CropToAspectAdvanced(
 		targetW = int(float64(height) * aspectRatio)
 	case aspectRatio > 0:
 		// Fallback: base on source height
-		targetH = srcH
+		targetH = int(srcH)
 		targetW = int(float64(targetH) * aspectRatio)
 	default:
 		// Nothing to do
@@ -132,11 +244,11 @@ func CropToAspectAdvanced(
 		var newW, newH int
 		if srcRatio > targetRatio {
 			// Fit by width
-			newW = targetW
+			newW = int(targetW)
 			newH = int(float64(newW) / srcRatio)
 		} else {
 			// Fit by height
-			newH = targetH
+			newH = int(targetH)
 			newW = int(float64(newH) * srcRatio)
 		}
 
@@ -207,4 +319,18 @@ func cropImage(img image.Image, rect image.Rectangle) image.Image {
 	return img.(interface {
 		SubImage(r image.Rectangle) image.Image
 	}).SubImage(rect)
+}
+
+// ParamInt extracts a URL path parameter as an integer.
+// If conversion fails, it writes a 400 JSON error and returns (0, false).
+func ParamInt(gc *gin.Context, name string) (int, bool) {
+	paramStr := gc.Param(name)
+	val, err := strconv.Atoi(paramStr)
+	if err != nil {
+		gc.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid " + name + " parameter",
+		})
+		return 0, false
+	}
+	return val, true
 }
