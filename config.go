@@ -6,17 +6,18 @@ import (
 
 // Config holds database configuration details
 type Config struct {
-	BaseApiUrl    string `json:"base_api_url"`
-	DbHost        string `json:"db_host"`
-	DbPort        int    `json:"db_port"`
-	DbUser        string `json:"db_user"`
-	DbPassword    string `json:"db_password"`
-	DbName        string `json:"db_name"`
-	DbSchema      string `json:"db_schema"`
-	SSLMode       string `json:"ssl_mode"`
-	PlutoVerbose  bool   `json:"pluto_verbose"`
-	PlutoImageDir string `json:"pluto_image_dir"`
-	PlutoCacheDir string `json:"pluto_cache_dir"`
+	BaseApiUrl      string `json:"base_api_url"`
+	DbHost          string `json:"db_host"`
+	DbPort          int    `json:"db_port"`
+	DbUser          string `json:"db_user"`
+	DbPassword      string `json:"db_password"`
+	DbName          string `json:"db_name"`
+	DbSchema        string `json:"db_schema"`
+	SSLMode         string `json:"ssl_mode"`
+	PlutoVerbose    bool   `json:"pluto_verbose"`
+	PlutoImageDir   string `json:"pluto_image_dir"`
+	PlutoCacheDir   string `json:"pluto_cache_dir"`
+	PlutoMaxImagePx int    `json:"pluto_max_image_px"`
 }
 
 func (config Config) Print() {

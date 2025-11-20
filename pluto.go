@@ -97,7 +97,6 @@ func (pluto *Pluto) prepareSql() error {
 
 func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.HandlerFunc) {
 	group := rg.Group("/image")
-	group.GET("/:id/", getImageHandler)
-	// group.GET("/get", getImageHandler)
-	group.GET("/file/:file", getFileHandler)
+	group.GET("/:id/", getImage)
+	group.GET("/file/:file", getFile)
 }

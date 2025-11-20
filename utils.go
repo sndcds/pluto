@@ -15,116 +15,6 @@ import (
 	"github.com/nfnt/resize"
 )
 
-type UrlParamType int
-
-const (
-	Boolean UrlParamType = iota
-	Int
-	Float
-	Rational
-	String
-)
-
-type UrlQueryParam struct {
-	Name  string
-	Type  UrlParamType
-	Exist bool
-	Err   error
-	Bool  bool
-	Int64 int64
-	Float float64
-	Value string
-}
-
-// Get the raw query parameter
-func GetUrlQueryParam(gc *gin.Context, paramName string, paramType UrlParamType) UrlQueryParam {
-	value, exists := gc.GetQuery(paramName)
-	p := UrlQueryParam{
-		Name:  paramName,
-		Type:  paramType,
-		Exist: exists,
-		Value: value,
-	}
-	switch paramType {
-	case Boolean:
-		p.Bool = exists
-	case Int:
-		p.Int64, p.Err = strconv.ParseInt(p.Value, 10, 64)
-	case Float:
-		p.Float, p.Err = strconv.ParseFloat(p.Value, 64)
-	case Rational:
-		p.Float, p.Err = ParseAspectRatio(value)
-	case String:
-	}
-	return p
-}
-
-func (p UrlQueryParam) Println() {
-	if p.Exist {
-		fmt.Print(p.Name, ": ")
-		if p.Err != nil {
-			fmt.Println("error: ", p.Err.Error())
-		} else {
-			switch p.Type {
-			case Boolean:
-				fmt.Println(p.Bool)
-			case Int:
-				fmt.Println(p.Int64)
-			case Float:
-				fmt.Println(p.Float)
-			case Rational:
-				fmt.Println(p.Float)
-			case String:
-				fmt.Println(p.Value)
-			}
-		}
-	}
-}
-
-func (p UrlQueryParam) ValueOr(def string) string {
-	if p.Exist {
-		return p.Value
-	}
-	return def
-}
-
-func (p UrlQueryParam) Int64Or(def int64) int64 {
-	if p.Exist {
-		return p.Int64
-	}
-	return def
-}
-
-func (p UrlQueryParam) IntOr(def int) int {
-	if p.Exist {
-		return int(p.Int64)
-	}
-	return def
-}
-
-func (p UrlQueryParam) Int() int {
-	if p.Exist {
-		return int(p.Int64)
-	}
-	return 0
-}
-
-func SetInt(p *UrlQueryParam, value int) {
-	if p != nil {
-		p.Exist = true
-		p.Type = Int
-		p.Int64 = int64(value)
-	}
-}
-
-func SetInt64(p *UrlQueryParam, value int64) {
-	if p != nil {
-		p.Exist = true
-		p.Type = Int
-		p.Int64 = value
-	}
-}
-
 // GenerateImageFilename returns a securely generated random filename
 // that preserves the original file's extension.
 //
@@ -333,4 +223,25 @@ func ParamInt(gc *gin.Context, name string) (int, bool) {
 		return 0, false
 	}
 	return val, true
+}
+
+func ParamIntDefault(gc *gin.Context, name string, def int) int {
+	fmt.Println(name, gc.Param(name), def)
+	fmt.Println("def: ", def)
+	val, err := strconv.Atoi(gc.Param(name))
+	if err != nil {
+		return def
+	}
+	return val
+}
+
+func ParamFloatDefault(gc *gin.Context, name string, def float64) float64 {
+	fmt.Println(name, gc.Param(name))
+	fmt.Println("def: ", def)
+	valStr := gc.Param(name)
+	val, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return def
+	}
+	return val
 }

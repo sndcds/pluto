@@ -2,14 +2,15 @@ package pluto
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"mime"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
-func getFileHandler(gc *gin.Context) {
+func getFile(gc *gin.Context) {
 	file := gc.Param("file") // e.g. "abc123.webp"
 
 	// Normalize and join path

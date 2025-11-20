@@ -16,8 +16,9 @@ import (
 	"github.com/lib/pq"
 )
 
-func getImageHandler(gc *gin.Context) {
+func getImage(gc *gin.Context) {
 	ctx := gc.Request.Context()
+	pool := Singleton.Db
 
 	imageId, ok := ParamInt(gc, "id")
 	if !ok {
@@ -25,53 +26,79 @@ func getImageHandler(gc *gin.Context) {
 		return
 	}
 
-	pType := GetUrlQueryParam(gc, "type", String)
-	pFit := GetUrlQueryParam(gc, "fit", String)
-	pQuality := GetUrlQueryParam(gc, "quality", Int)
-	pWidth := GetUrlQueryParam(gc, "width", Int)
-	pHeight := GetUrlQueryParam(gc, "height", Int)
-	pRatio := GetUrlQueryParam(gc, "ratio", Rational)
-	pFocusX := GetUrlQueryParam(gc, "focusx", Float)
-	pFocusY := GetUrlQueryParam(gc, "focusy", Float)
-	pLossless := GetUrlQueryParam(gc, "lossless", Boolean)
+	fileTypeStr := gc.DefaultQuery("type", "jpg")
+	if fileTypeStr != "jpg" && fileTypeStr != "png" && fileTypeStr != "webp" {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid image type"})
+		return
+	}
+	fmt.Println("fileTypeStr:", fileTypeStr)
 
-	typeStr := pType.ValueOr("jpg")
-	quality := pQuality.IntOr(100)
+	fitStr := gc.DefaultQuery("fit", "")
+	if fitStr != "" && fitStr != "cover" {
+		// TODO: Support mor  fit types like in CSS
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid fit mode"})
+		return
+	}
+	fmt.Println("fitStr:", fitStr)
 
-	fmt.Println("..................")
-	pType.Println()
-	pFit.Println()
-	pQuality.Println()
-	pWidth.Println()
-	pHeight.Println()
-	pRatio.Println()
-	pFocusX.Println()
-	pFocusY.Println()
-	pLossless.Println()
+	quality := ParamIntDefault(gc, "quality", 80)
+	if quality < 0 {
+		quality = 0
+	} else if quality > 100 {
+		quality = 100
+	}
+	fmt.Println("quality:", quality)
 
-	if pRatio.Exist && (!pWidth.Exist || !pHeight.Exist) {
-		aspectRatio := pRatio.Float
-		fmt.Println("aspectRatio: ", aspectRatio)
-		if aspectRatio <= 0.0001 {
+	width := ParamIntDefault(gc, "width", 0)
+	height := ParamIntDefault(gc, "height", 0)
+
+	ratioStr, ok := gc.GetQuery("ratio")
+	ratio := 1.0
+	hasRatio := false
+	if ok {
+		var err error
+		ratio, err = ParseAspectRatio(ratioStr)
+		if err != nil {
+			gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid ratio"})
+			return
+		}
+		hasRatio = true
+	} else {
+		ratio = 1.0
+	}
+	fmt.Sprintln("ratio:", ratio)
+
+	knownEdges := 0
+	if width > 0 {
+		knownEdges++
+	}
+	if height > 0 {
+		knownEdges++
+	}
+	fmt.Println("Known edges:", knownEdges)
+
+	lossless := false // TODO: Implement
+
+	if knownEdges == 2 {
+		f := float64(0.0)
+		if width > Singleton.Config.PlutoMaxImagePx {
+			f = float64(width) / float64(Singleton.Config.PlutoMaxImagePx)
+		}
+		if height > Singleton.Config.PlutoMaxImagePx {
+			f = float64(height) / float64(Singleton.Config.PlutoMaxImagePx)
+		}
+		fmt.Println("f: ", f)
+	} else if hasRatio && knownEdges == 1 {
+		if ratio <= 0.0001 {
 			gc.String(http.StatusBadRequest, "Invalid ratio format. Use format like '16:9'")
 			return
 		}
-		if pWidth.Exist {
-			pHeight = UrlQueryParam{
-				Name:  "height",
-				Type:  Int,
-				Exist: true,
-				Int64: int64(float64(pWidth.Int64) / aspectRatio),
-			}
-			fmt.Println("New height ...", pHeight.Int())
-		} else if pHeight.Exist {
-			pWidth = UrlQueryParam{
-				Name:  "width",
-				Type:  Int,
-				Exist: true,
-				Int64: int64(float64(pHeight.Int64) / aspectRatio),
-			}
-			fmt.Println("New width ...", pWidth.Int())
+		if width > 0 {
+			height = int(float64(width) / ratio)
+			fmt.Println("New height; ", height)
+		} else if height > 0 {
+			width = int(float64(height) / ratio)
+			fmt.Println("New width: ", width)
 		} else {
 			gc.String(http.StatusBadRequest, "Either width or height must be provided if using ratio")
 			return
@@ -79,53 +106,42 @@ func getImageHandler(gc *gin.Context) {
 	}
 
 	var paramCode, paramValues string
-	if pFit.Exist {
+	if fitStr != "" {
 		paramCode += "f"
-		switch pFit.Value {
+		switch fitStr {
 		case "cover":
 			paramValues += "01"
 		default:
 			paramValues += "00"
 		}
 	}
-	if pType.Exist {
-		paramCode += "t"
-		switch pType.Value {
-		case "png":
-			paramValues += "01"
-		case "webp":
-			paramValues += "02"
-		default:
-			paramValues += "00"
-		}
-	}
-	if pQuality.Exist {
+	if quality < 100 {
 		paramCode += "q"
-		paramValues += fmt.Sprintf("_%02x_", pQuality.Int)
+		paramValues += fmt.Sprintf("%02x", quality) // 0 - 99
 	}
-	if pWidth.Exist {
+	if width > 0 {
+		// TODO: Limit to configured max size
 		paramCode += "w"
-		paramValues += fmt.Sprintf("_%04x_", pWidth.Int)
+		paramValues += fmt.Sprintf("%04x", width) // max 65535 pixel
 	}
-	if pHeight.Exist {
+	if height > 0 {
+		// TODO: Limit to configured max size
 		paramCode += "h"
-		paramValues += fmt.Sprintf("_%04x_", pHeight.Int)
+		paramValues += fmt.Sprintf("%04x", height) // max 65535 pixel
 	}
-	if pFocusX.Exist {
-		paramCode += "x"
-		paramValues += fmt.Sprintf("_%03x_", pFocusX.Int)
-	}
-	if pFocusY.Exist {
-		paramCode += "y"
-		paramValues += fmt.Sprintf("_%03x_", pFocusY.Int)
+
+	if ratioStr != "" {
+		paramCode += "r"
+		paramValues += "_" + ratioStr
 	}
 
 	imageReceipt := fmt.Sprintf("%x_%s_%s", imageId, paramCode, paramValues)
-	cacheFileName := imageReceipt + "." + typeStr
-	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, cacheFileName)
-
 	fmt.Println("imageReceipt: ", imageReceipt)
+
+	cacheFileName := imageReceipt + "." + fileTypeStr
 	fmt.Println("cacheFileName: ", cacheFileName)
+
+	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, cacheFileName)
 	fmt.Println("cacheFilePath: ", cacheFilePath)
 
 	if _, err := os.Stat(cacheFilePath); err == nil {
@@ -136,16 +152,19 @@ func getImageHandler(gc *gin.Context) {
 	}
 
 	var fileName, genFileName, mimeType string
-	sql := fmt.Sprintf(`SELECT file_name, gen_file_name, mime_type FROM %s.pluto_image WHERE id = $1`, pq.QuoteIdentifier(Singleton.Config.DbSchema))
+	var focusX, focusY *float64
+	sql := fmt.Sprintf(`
+		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
+		pq.QuoteIdentifier(Singleton.Config.DbSchema))
 	fmt.Println(sql)
-	err := Singleton.Db.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType)
+	err := pool.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Image not found")
 		return
 	}
 
 	imgPath := filepath.Join(Singleton.Config.PlutoImageDir, genFileName)
-
+	fmt.Println("read from imgPath: ", imgPath)
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
 		gc.String(http.StatusInternalServerError, "Failed to read image")
@@ -158,34 +177,35 @@ func getImageHandler(gc *gin.Context) {
 		return
 	}
 
-	if pWidth.Exist || pHeight.Exist || pRatio.Exist {
-		img = CropToAspectAdvanced(
-			img,
-			pFit.Value,
-			pRatio.Float,
-			pFocusX.Float,
-			pFocusY.Float,
-			pWidth.Int(),
-			pHeight.Int())
+	if width > 0 || height > 0 || hasRatio {
+		fx := 0.5
+		fy := 0.5
+		if focusX != nil {
+			fx = *focusX
+		}
+		if focusY != nil {
+			fy = *focusX
+		}
+		img = CropToAspectAdvanced(img, fitStr, ratio, fx, fy, width, height)
 	}
 
 	var buf bytes.Buffer
-	switch typeStr {
-	case "image/jpeg", "jpeg", "jpg":
-		typeStr = "jpg"
+	switch fileTypeStr {
+	case "jpg":
+		fileTypeStr = "jpg"
 		err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
-	case "image/png", "png":
-		typeStr = "png"
+	case "png":
+		fileTypeStr = "png"
 		err = png.Encode(&buf, img)
-	case "image/webp", "webp":
-		typeStr = "webp"
-		options := &webp.Options{Lossless: pLossless.Bool}
-		if !pLossless.Bool {
+	case "webp":
+		fileTypeStr = "webp"
+		options := &webp.Options{Lossless: lossless}
+		if !lossless {
 			options.Quality = float32(quality)
 		}
 		err = webp.Encode(&buf, img, options)
 	default:
-		gc.JSON(http.StatusUnsupportedMediaType, gin.H{"error": fmt.Sprintf("Unsupported image format: image/%s", typeStr)})
+		gc.JSON(http.StatusUnsupportedMediaType, gin.H{"error": fmt.Sprintf("Unsupported image format: image/%s", fileTypeStr)})
 		return
 	}
 	if err != nil {
@@ -200,11 +220,10 @@ func getImageHandler(gc *gin.Context) {
 				INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
 				VALUES ($1, $2, $3)`,
 			pq.QuoteIdentifier(Singleton.Config.DbSchema))
-		_, _ = Singleton.Db.Exec(ctx, sql, imageReceipt, imageId, typeStr)
+		_, _ = pool.Exec(ctx, sql, imageReceipt, imageId, fileTypeStr)
 	}
 
-	gc.Header("Content-Type", "image/"+typeStr)
+	gc.Header("Content-Type", "image/"+fileTypeStr)
 	gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
-	gc.Data(http.StatusOK, "image/"+typeStr, buf.Bytes())
-
+	gc.Data(http.StatusOK, "image/"+fileTypeStr, buf.Bytes())
 }
