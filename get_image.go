@@ -41,7 +41,7 @@ func getImage(gc *gin.Context) {
 	}
 	fmt.Println("fitStr:", fitStr)
 
-	quality := ParamIntDefault(gc, "quality", 80)
+	quality := QueryIntDefault(gc, "quality", 80)
 	if quality < 0 {
 		quality = 0
 	} else if quality > 100 {
@@ -49,8 +49,8 @@ func getImage(gc *gin.Context) {
 	}
 	fmt.Println("quality:", quality)
 
-	width := ParamIntDefault(gc, "width", 0)
-	height := ParamIntDefault(gc, "height", 0)
+	width := QueryIntDefault(gc, "width", 0)
+	height := QueryIntDefault(gc, "height", 0)
 
 	ratioStr, ok := gc.GetQuery("ratio")
 	ratio := 1.0

@@ -226,8 +226,6 @@ func ParamInt(gc *gin.Context, name string) (int, bool) {
 }
 
 func ParamIntDefault(gc *gin.Context, name string, def int) int {
-	fmt.Println(name, gc.Param(name), def)
-	fmt.Println("def: ", def)
 	val, err := strconv.Atoi(gc.Param(name))
 	if err != nil {
 		return def
@@ -236,10 +234,17 @@ func ParamIntDefault(gc *gin.Context, name string, def int) int {
 }
 
 func ParamFloatDefault(gc *gin.Context, name string, def float64) float64 {
-	fmt.Println(name, gc.Param(name))
-	fmt.Println("def: ", def)
 	valStr := gc.Param(name)
 	val, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return def
+	}
+	return val
+}
+
+func QueryIntDefault(gc *gin.Context, name string, def int) int {
+	valStr := gc.DefaultQuery(name, fmt.Sprintf("%d", def))
+	val, err := strconv.Atoi(valStr)
 	if err != nil {
 		return def
 	}
