@@ -13,7 +13,6 @@ import (
 
 	"github.com/chai2010/webp"
 	"github.com/gin-gonic/gin"
-	"github.com/lib/pq"
 )
 
 func getImage(gc *gin.Context) {
@@ -31,7 +30,6 @@ func getImage(gc *gin.Context) {
 		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid image type"})
 		return
 	}
-	fmt.Println("fileTypeStr:", fileTypeStr)
 
 	fitStr := gc.DefaultQuery("fit", "")
 	if fitStr != "" && fitStr != "cover" {
@@ -39,34 +37,42 @@ func getImage(gc *gin.Context) {
 		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid fit mode"})
 		return
 	}
-	fmt.Println("fitStr:", fitStr)
 
-	quality := QueryIntDefault(gc, "quality", 80)
+	quality, ok := GetQueryIntDefault(gc, "quality", 80)
+	if !ok {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid quality"})
+		return
+	}
 	if quality < 0 {
 		quality = 0
 	} else if quality > 100 {
 		quality = 100
 	}
-	fmt.Println("quality:", quality)
 
-	width := QueryIntDefault(gc, "width", 0)
-	height := QueryIntDefault(gc, "height", 0)
+	width, ok := GetQueryIntDefault(gc, "width", 0)
+	if !ok {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid width"})
+		return
+	}
 
-	ratioStr, ok := gc.GetQuery("ratio")
-	ratio := 1.0
-	hasRatio := false
-	if ok {
+	height, ok := GetQueryIntDefault(gc, "height", 0)
+	if !ok {
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid height"})
+		return
+	}
+
+	ratioStr, hasRatio := gc.GetQuery("ratio")
+	ratio := float32(0.0)
+	if hasRatio {
 		var err error
 		ratio, err = ParseAspectRatio(ratioStr)
 		if err != nil {
 			gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid ratio"})
 			return
 		}
-		hasRatio = true
-	} else {
-		ratio = 1.0
 	}
-	fmt.Sprintln("ratio:", ratio)
+
+	lossless := false // TODO: Implement
 
 	knownEdges := 0
 	if width > 0 {
@@ -75,30 +81,16 @@ func getImage(gc *gin.Context) {
 	if height > 0 {
 		knownEdges++
 	}
-	fmt.Println("Known edges:", knownEdges)
 
-	lossless := false // TODO: Implement
-
-	if knownEdges == 2 {
-		f := float64(0.0)
-		if width > Singleton.Config.PlutoMaxImagePx {
-			f = float64(width) / float64(Singleton.Config.PlutoMaxImagePx)
-		}
-		if height > Singleton.Config.PlutoMaxImagePx {
-			f = float64(height) / float64(Singleton.Config.PlutoMaxImagePx)
-		}
-		fmt.Println("f: ", f)
-	} else if hasRatio && knownEdges == 1 {
+	if hasRatio && knownEdges == 1 {
 		if ratio <= 0.0001 {
 			gc.String(http.StatusBadRequest, "Invalid ratio format. Use format like '16:9'")
 			return
 		}
 		if width > 0 {
-			height = int(float64(width) / ratio)
-			fmt.Println("New height; ", height)
+			height = int(float32(width) / ratio)
 		} else if height > 0 {
-			width = int(float64(height) / ratio)
-			fmt.Println("New width: ", width)
+			width = int(float32(height) * ratio)
 		} else {
 			gc.String(http.StatusBadRequest, "Either width or height must be provided if using ratio")
 			return
@@ -130,33 +122,26 @@ func getImage(gc *gin.Context) {
 		paramValues += fmt.Sprintf("%04x", height) // max 65535 pixel
 	}
 
-	if ratioStr != "" {
+	if hasRatio {
 		paramCode += "r"
-		paramValues += "_" + ratioStr
+		paramValues += "_" + EncodeFloat32ForPath(ratio)
 	}
 
 	imageReceipt := fmt.Sprintf("%x_%s_%s", imageId, paramCode, paramValues)
-	fmt.Println("imageReceipt: ", imageReceipt)
-
 	cacheFileName := imageReceipt + "." + fileTypeStr
-	fmt.Println("cacheFileName: ", cacheFileName)
-
 	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, cacheFileName)
-	fmt.Println("cacheFilePath: ", cacheFilePath)
 
 	if _, err := os.Stat(cacheFilePath); err == nil {
 		gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
 		gc.File(cacheFilePath)
-		fmt.Println("cacheFile used!")
 		return
 	}
 
 	var fileName, genFileName, mimeType string
-	var focusX, focusY *float64
+	var focusX, focusY *float32
 	sql := fmt.Sprintf(`
 		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
-		pq.QuoteIdentifier(Singleton.Config.DbSchema))
-	fmt.Println(sql)
+		Singleton.Config.DbSchema)
 	err := pool.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Image not found")
@@ -164,7 +149,6 @@ func getImage(gc *gin.Context) {
 	}
 
 	imgPath := filepath.Join(Singleton.Config.PlutoImageDir, genFileName)
-	fmt.Println("read from imgPath: ", imgPath)
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
 		gc.String(http.StatusInternalServerError, "Failed to read image")
@@ -178,15 +162,15 @@ func getImage(gc *gin.Context) {
 	}
 
 	if width > 0 || height > 0 || hasRatio {
-		fx := 0.5
-		fy := 0.5
+		fx := float32(0.5)
+		fy := float32(0.5)
 		if focusX != nil {
 			fx = *focusX
 		}
 		if focusY != nil {
-			fy = *focusX
+			fy = *focusY
 		}
-		img = CropToAspectAdvanced(img, fitStr, ratio, fx, fy, width, height)
+		img = CropWithFocus(img, ratio, fx, fy, width, height)
 	}
 
 	var buf bytes.Buffer
@@ -219,7 +203,7 @@ func getImage(gc *gin.Context) {
 		sql = fmt.Sprintf(`
 				INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
 				VALUES ($1, $2, $3)`,
-			pq.QuoteIdentifier(Singleton.Config.DbSchema))
+			Singleton.Config.DbSchema)
 		_, _ = pool.Exec(ctx, sql, imageReceipt, imageId, fileTypeStr)
 	}
 

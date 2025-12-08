@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/lib/pq"
-	"github.com/rwcarlsen/goexif/exif"
 	"image"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rwcarlsen/goexif/exif"
 )
 
 func UploadImageHandler(gc *gin.Context) {
@@ -119,7 +119,7 @@ func UploadImageHandler(gc *gin.Context) {
     	INSERT INTO %s.pluto_image 
     	(file_name, gen_file_name, width, height, mime_type, exif, license, created_by, copyright, alt_text, user_id)
     	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		`, pq.QuoteIdentifier(Singleton.Config.DbSchema))
+		`, Singleton.Config.DbSchema)
 	_, err = Singleton.Db.Exec(context.Background(), query, originalFileName, generatedFileName, cfg.Width, cfg.Height, format, exifData, meta.License, meta.CreatedBy, meta.Copyright, meta.AltText, userId)
 	if err != nil {
 		gc.String(http.StatusInternalServerError, "DB insert failed: %s", err.Error())
