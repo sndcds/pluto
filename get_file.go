@@ -14,7 +14,7 @@ func getFile(gc *gin.Context) {
 	file := gc.Param("file") // e.g. "abc123.webp"
 
 	// Normalize and join path
-	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, filepath.Clean(file))
+	cacheFilePath := filepath.Join(PlutoInstance.Config.PlutoCacheDir, filepath.Clean(file))
 	fmt.Println("Serving file:", file)
 	fmt.Println("Resolved path:", cacheFilePath)
 

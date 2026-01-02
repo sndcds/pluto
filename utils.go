@@ -1,17 +1,20 @@
 package pluto
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"image"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/disintegration/imaging"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/nfnt/resize"
 )
 
@@ -137,11 +140,14 @@ func CropWithFocus(
 	focusX = clampNormalized(focusX)
 	focusY = clampNormalized(focusY)
 
-	// Determine crop size based on target aspect ratio
-	if targetRatio <= eps {
+	// Determine target ratio
+	if targetW > 0 && targetH > 0 {
+		targetRatio = float32(targetW) / float32(targetH)
+	} else if targetRatio <= eps {
 		targetRatio = srcRatio
 	}
 
+	// Determine crop size based on target aspect ratio
 	var cropW, cropH int
 	if srcRatio > targetRatio {
 		// Source is wider → crop width
@@ -153,24 +159,29 @@ func CropWithFocus(
 		cropH = int(float32(cropW) / targetRatio)
 	}
 
-	// Compute top-left corner based on focus
-	x0 := clampInt(int(float32(srcW-cropW)*focusX), 0, srcW-cropW)
-	y0 := clampInt(int(float32(srcH-cropH)*focusY), 0, srcH-cropH)
+	// Compute top-left corner so that focus point is centered
+	centerX := int(focusX * float32(srcW))
+	centerY := int(focusY * float32(srcH))
+	x0 := clampInt(centerX-cropW/2, 0, srcW-cropW)
+	y0 := clampInt(centerY-cropH/2, 0, srcH-cropH)
 
-	// Crop the image
 	cropped := imaging.Crop(img, image.Rect(x0, y0, x0+cropW, y0+cropH))
 
-	// Resize final image if target dimensions are provided (no upscaling)
+	// --- Compute final size ---
 	finalW, finalH := cropW, cropH
+
 	if targetW > 0 {
-		finalW = int(math.Min(float64(targetW), float64(cropW)))
-		finalH = int(float64(finalW) / float64(cropW) * float64(cropH))
+		// Width is driving value
+		finalW = targetW
+		finalH = int(float32(finalW) / float32(cropW) * float32(cropH))
 	}
 	if targetH > 0 && finalH > targetH {
+		// Make sure height does not exceed targetH
 		finalH = targetH
-		finalW = int(float64(finalH) / float64(cropH) * float64(cropW))
+		finalW = int(float32(finalH) / float32(cropH) * float32(cropW))
 	}
 
+	// Resize if needed
 	if finalW != cropW || finalH != cropH {
 		cropped = imaging.Resize(cropped, finalW, finalH, imaging.Lanczos)
 	}
@@ -218,4 +229,172 @@ func DecodeFloat32FromPath(s string) (float32, error) {
 	}
 	bits := uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 	return math.Float32frombits(bits), nil
+}
+
+type ImageCleanupResult struct {
+	CacheFilesRemoved int
+	ImageFileRemoved  bool
+}
+
+func CleanupPlutoImageFiles(
+	imageId int,
+	fileName string,
+) (*ImageCleanupResult, error) {
+
+	result := &ImageCleanupResult{}
+
+	cacheFilesRemoved, err := CleanupPlutoCache(imageId)
+	if err != nil {
+		return result, err
+	}
+	result.CacheFilesRemoved = cacheFilesRemoved
+
+	imageFileRemoved, err := CleanupPlutoImage(fileName)
+	if err != nil {
+		return result, err
+	}
+	result.ImageFileRemoved = imageFileRemoved
+
+	return result, nil
+}
+
+// Delete original image file
+func CleanupPlutoImage(imageFileName string) (bool, error) {
+	if imageFileName != "" {
+		path := filepath.Join(PlutoInstance.Config.PlutoImageDir, imageFileName)
+		if err := RemoveFile(path); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// Delete cache files
+func CleanupPlutoCache(imageId int) (int, error) {
+	prefix := fmt.Sprintf("%x_", imageId)
+	cacheFilesRemoved, err := DeleteFilesWithPrefix(PlutoInstance.Config.PlutoCacheDir, prefix)
+	if err != nil {
+		return 0, err
+	}
+	return cacheFilesRemoved, nil
+}
+
+// DeleteFilesWithPrefix deletes all files in a directory that start with the given prefix.
+// Returns the number of deleted files and an error (if any).
+func DeleteFilesWithPrefix(dir string, prefix string) (int, error) {
+	if len(prefix) < 1 {
+		return 0, fmt.Errorf("prefix required")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read directory: %w", err)
+	}
+	deletedCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, prefix) {
+			fullPath := filepath.Join(dir, name)
+			if err := os.Remove(fullPath); err != nil {
+				return deletedCount, fmt.Errorf("failed to delete %s: %w", fullPath, err)
+			}
+			deletedCount++
+		}
+	}
+	return deletedCount, nil
+}
+
+// RemoveFile deletes a file at the given path.
+// Returns an error if the file cannot be deleted.
+func RemoveFile(path string) error {
+	if path == "" {
+		return fmt.Errorf("file path required")
+	}
+
+	// Check if file exists first (optional)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Errorf("file does not exist: %s", path)
+	}
+
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("failed to delete file %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// GetImageFocus returns focus_x and focus_y for an image
+func GetImageFocusTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	imageID int,
+) (focusX *float64, focusY *float64, err error) {
+
+	query := fmt.Sprintf(
+		`SELECT focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
+		PlutoInstance.Config.DbSchema,
+	)
+
+	var fx, fy *float64
+	err = tx.QueryRow(ctx, query, imageID).Scan(&fx, &fy)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return fx, fy, nil
+}
+
+// Deletes image + cache DB entries, returns filename to delete from disk
+func DeleteImageTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	imageId int,
+) (deletedFileName string, cacheRows int64, err error) {
+
+	schema := PlutoInstance.Config.DbSchema
+
+	// Delete cache rows
+	cacheRowsAffected, err := DeleteCacheTx(ctx, tx, imageId)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// Delete image row
+	imageQuery := fmt.Sprintf(`DELETE FROM %s.pluto_image WHERE id = $1 RETURNING gen_file_name`, schema)
+	err = tx.QueryRow(ctx, imageQuery, imageId).Scan(&deletedFileName)
+	if err != nil {
+		return "", cacheRowsAffected, err
+	}
+
+	return deletedFileName, cacheRowsAffected, nil
+}
+
+// Deletes cache DB entries, return number of affected rows
+func DeleteCacheTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	imageID int,
+) (cacheRows int64, err error) {
+
+	schema := PlutoInstance.Config.DbSchema
+
+	cacheQuery := fmt.Sprintf(`DELETE FROM %s.pluto_cache WHERE image_id = $1`, schema)
+	cmdTag, err := tx.Exec(ctx, cacheQuery, imageID)
+	if err != nil {
+		return 0, err
+	}
+
+	return cmdTag.RowsAffected(), nil
+}
+
+func FloatPtrEqual(a, b *float64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }

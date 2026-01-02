@@ -14,20 +14,18 @@ import (
 )
 
 type Pluto struct {
-	Config        Config
-	Db            *pgxpool.Pool
-	Verbose       bool
-	ImageDir      string
-	SqlQueryEvent string
+	Config  Config
+	Verbose bool
+	DbPool  *pgxpool.Pool
 }
 
-var Singleton *Pluto
+var PlutoInstance *Pluto
 
 // New creates and initializes a new Pluto instance
-func Initialize(configFilePath string, db *pgxpool.Pool, verbose bool) (*Pluto, error) {
+func Initialize(configFilePath string, pool *pgxpool.Pool, verbose bool) (*Pluto, error) {
 	pluto := &Pluto{}
 	pluto.Verbose = verbose
-	pluto.Db = db
+	pluto.DbPool = pool
 
 	pluto.Log("loading configuration")
 	if err := pluto.loadConfig(configFilePath); err != nil {
@@ -39,7 +37,7 @@ func Initialize(configFilePath string, db *pgxpool.Pool, verbose bool) (*Pluto, 
 		return nil, fmt.Errorf("failed to prepare SQL: %w", err)
 	}
 
-	Singleton = pluto
+	PlutoInstance = pluto
 
 	return pluto, nil
 }
@@ -50,26 +48,9 @@ func (pluto *Pluto) Log(msg string) {
 	}
 }
 
-/*
-func (pluto *pluto) Init(configFilePath string) error {
-	err := pluto.loadConfig(configFilePath)
-	if err != nil {
-		panic(err)
-	}
-
-	err = pluto.prepareSql()
-	if err != nil {
-		panic(err)
-	}
-
-	pluto.initDB()
-	defer pluto.ImageDB.Close()
-
-	return nil
-}
-*/
-
 func (pluto *Pluto) loadConfig(configFilePath string) error {
+	pluto.Config = DefaultConfig()
+
 	file, err := os.Open(configFilePath)
 	if err != nil {
 		return err
@@ -96,7 +77,7 @@ func (pluto *Pluto) prepareSql() error {
 }
 
 func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.HandlerFunc) {
-	group := rg.Group("/image")
+	group := rg.Group("/" + pluto.Config.PlutoRoute)
 	group.GET("/:id/", getImage)
 	group.GET("/file/:file", getFile)
 }

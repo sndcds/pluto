@@ -17,11 +17,11 @@ import (
 
 func getImage(gc *gin.Context) {
 	ctx := gc.Request.Context()
-	pool := Singleton.Db
+	pool := PlutoInstance.DbPool
 
 	imageId, ok := ParamInt(gc, "id")
 	if !ok {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid image ID"})
+		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid image id"})
 		return
 	}
 
@@ -129,7 +129,7 @@ func getImage(gc *gin.Context) {
 
 	imageReceipt := fmt.Sprintf("%x_%s_%s", imageId, paramCode, paramValues)
 	cacheFileName := imageReceipt + "." + fileTypeStr
-	cacheFilePath := filepath.Join(Singleton.Config.PlutoCacheDir, cacheFileName)
+	cacheFilePath := filepath.Join(PlutoInstance.Config.PlutoCacheDir, cacheFileName)
 
 	if _, err := os.Stat(cacheFilePath); err == nil {
 		gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
@@ -141,14 +141,14 @@ func getImage(gc *gin.Context) {
 	var focusX, focusY *float32
 	sql := fmt.Sprintf(`
 		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
-		Singleton.Config.DbSchema)
+		PlutoInstance.Config.DbSchema)
 	err := pool.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Image not found")
 		return
 	}
 
-	imgPath := filepath.Join(Singleton.Config.PlutoImageDir, genFileName)
+	imgPath := filepath.Join(PlutoInstance.Config.PlutoImageDir, genFileName)
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
 		gc.String(http.StatusInternalServerError, "Failed to read image")
@@ -203,7 +203,7 @@ func getImage(gc *gin.Context) {
 		sql = fmt.Sprintf(`
 				INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
 				VALUES ($1, $2, $3)`,
-			Singleton.Config.DbSchema)
+			PlutoInstance.Config.DbSchema)
 		_, _ = pool.Exec(ctx, sql, imageReceipt, imageId, fileTypeStr)
 	}
 
