@@ -1,7 +1,6 @@
 package pluto
 
 import (
-	"fmt"
 	"mime"
 	"os"
 	"path/filepath"
@@ -15,8 +14,6 @@ func getFile(gc *gin.Context) {
 
 	// Normalize and join path
 	cacheFilePath := filepath.Join(PlutoInstance.Config.PlutoCacheDir, filepath.Clean(file))
-	fmt.Println("Serving file:", file)
-	fmt.Println("Resolved path:", cacheFilePath)
 
 	// Security: Disallow path traversal attempts
 	if strings.Contains(file, "..") || filepath.IsAbs(file) {

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	_ "log"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,9 +15,10 @@ import (
 )
 
 type Pluto struct {
-	Config  Config
-	Verbose bool
-	DbPool  *pgxpool.Pool
+	Config   Config
+	Verbose  bool
+	DbPool   *pgxpool.Pool
+	DbSchema string
 }
 
 var PlutoInstance *Pluto
@@ -24,6 +26,7 @@ var PlutoInstance *Pluto
 // New creates and initializes a new Pluto instance
 func Initialize(configFilePath string, pool *pgxpool.Pool, verbose bool) (*Pluto, error) {
 	pluto := &Pluto{}
+
 	pluto.Verbose = verbose
 	pluto.DbPool = pool
 
@@ -36,6 +39,8 @@ func Initialize(configFilePath string, pool *pgxpool.Pool, verbose bool) (*Pluto
 	if err := pluto.prepareSql(); err != nil {
 		return nil, fmt.Errorf("failed to prepare SQL: %w", err)
 	}
+
+	pluto.DbSchema = pluto.Config.DbSchema
 
 	PlutoInstance = pluto
 
@@ -67,6 +72,7 @@ func (pluto *Pluto) loadConfig(configFilePath string) error {
 		return err
 	}
 
+	pluto.Config.PlutoRoute = strings.Trim(pluto.Config.PlutoRoute, "/")
 	pluto.Config.Print()
 
 	return nil
@@ -80,4 +86,6 @@ func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.Handl
 	group := rg.Group("/" + pluto.Config.PlutoRoute)
 	group.GET("/:id/", getImage)
 	group.GET("/file/:file", getFile)
+	group.GET("/meta/:context/:contextId/:identifier", getImageMeta)
+	group.GET("/cache/:imageId", getImageCache)
 }

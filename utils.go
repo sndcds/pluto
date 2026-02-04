@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image"
+	"image/draw"
 	"math"
 	"os"
 	"path/filepath"
@@ -49,6 +50,21 @@ func GetQueryIntDefault(gc *gin.Context, key string, def int) (int, bool) {
 	val, err := strconv.Atoi(str)
 	if err != nil {
 		return 0, false
+	}
+	return val, true
+}
+
+func GetQueryBoolDefault(gc *gin.Context, key string, def bool) (bool, bool) {
+	str, ok := gc.GetQuery(key)
+	if !ok {
+		return def, true
+	}
+	if str == "" {
+		return true, true
+	}
+	val, err := strconv.ParseBool(str)
+	if err != nil {
+		return false, false
 	}
 	return val, true
 }
@@ -125,7 +141,85 @@ func cropImage(img image.Image, rect image.Rectangle) image.Image {
 	}).SubImage(rect)
 }
 
+// CropWithFocus crops an image to a target aspect ratio and optionally resizes,
+// centered on the focus point, while preserving alpha transparency.
 func CropWithFocus(
+	img image.Image,
+	targetRatio float32, // desired width/height ratio (ignored if targetW/targetH set)
+	focusX, focusY float32, // normalized [0,1] focus point
+	targetW, targetH int, // optional final size; 0 to keep crop size
+) image.Image {
+	srcBounds := img.Bounds()
+	srcW := srcBounds.Dx()
+	srcH := srcBounds.Dy()
+	srcRatio := float32(srcW) / float32(srcH)
+
+	// Clamp focus values to [0,1]
+	focusX = clampNormalized(focusX)
+	focusY = clampNormalized(focusY)
+
+	// Compute target ratio if targetW and targetH are set
+	if targetW > 0 && targetH > 0 {
+		targetRatio = float32(targetW) / float32(targetH)
+	} else if targetRatio <= 0.00001 {
+		targetRatio = srcRatio
+	}
+
+	// Determine crop size (never larger than source)
+	var cropW, cropH int
+	if srcRatio > targetRatio {
+		// Source is wider than target ratio → limit width
+		cropH = srcH
+		cropW = int(float32(cropH) * targetRatio)
+	} else {
+		// Source is taller than target ratio → limit height
+		cropW = srcW
+		cropH = int(float32(cropW) / targetRatio)
+	}
+
+	// Compute top-left of crop rectangle, centered on focus
+	centerX := int(focusX * float32(srcW))
+	centerY := int(focusY * float32(srcH))
+	x0 := clampInt(centerX-cropW/2, 0, srcW-cropW)
+	y0 := clampInt(centerY-cropH/2, 0, srcH-cropH)
+	cropRect := image.Rect(x0, y0, x0+cropW, y0+cropH)
+
+	// Crop into NRGBA to preserve alpha
+	var cropped *image.NRGBA
+	if nrgbaImg, ok := img.(*image.NRGBA); ok {
+		cropped = imaging.Crop(nrgbaImg, cropRect)
+	} else {
+		dst := imaging.New(cropW, cropH, image.Transparent)
+		draw.Draw(dst, dst.Bounds(), img, cropRect.Min, draw.Over)
+		cropped = dst
+	}
+
+	// Optional resizing: scale down only, never exceed cropped size
+	finalW, finalH := cropW, cropH
+	if targetW > 0 {
+		scale := float64(targetW) / float64(cropW)
+		if scale < 1 {
+			finalW = targetW
+			finalH = int(float64(cropH) * scale)
+		}
+	}
+	if targetH > 0 {
+		scale := float64(targetH) / float64(cropH)
+		if scale < 1 {
+			finalH = targetH
+			finalW = int(float64(cropW) * scale)
+		}
+	}
+
+	// Resize only if needed
+	if finalW != cropW || finalH != cropH {
+		cropped = imaging.Resize(cropped, finalW, finalH, imaging.Lanczos)
+	}
+
+	return cropped
+}
+
+func CropWithFocusWithoutAlpha(
 	img image.Image,
 	targetRatio float32,
 	focusX, focusY float32,
@@ -238,22 +332,25 @@ type ImageCleanupResult struct {
 
 func CleanupPlutoImageFiles(
 	imageId int,
-	fileName string,
+	fileName *string,
 ) (*ImageCleanupResult, error) {
-
 	result := &ImageCleanupResult{}
 
+	// Always clean cache (safe even if image doesn't exist)
 	cacheFilesRemoved, err := CleanupPlutoCache(imageId)
 	if err != nil {
 		return result, err
 	}
 	result.CacheFilesRemoved = cacheFilesRemoved
 
-	imageFileRemoved, err := CleanupPlutoImage(fileName)
-	if err != nil {
-		return result, err
+	// Only clean image file if we actually have a filename
+	if fileName != nil && *fileName != "" {
+		imageFileRemoved, err := CleanupPlutoImage(*fileName)
+		if err != nil {
+			return result, err
+		}
+		result.ImageFileRemoved = imageFileRemoved
 	}
-	result.ImageFileRemoved = imageFileRemoved
 
 	return result, nil
 }
@@ -334,7 +431,7 @@ func GetImageFocusTx(
 
 	query := fmt.Sprintf(
 		`SELECT focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
-		PlutoInstance.Config.DbSchema,
+		PlutoInstance.DbSchema,
 	)
 
 	var fx, fy *float64
@@ -352,8 +449,7 @@ func DeleteImageTx(
 	tx pgx.Tx,
 	imageId int,
 ) (deletedFileName string, cacheRows int64, err error) {
-
-	schema := PlutoInstance.Config.DbSchema
+	schema := PlutoInstance.DbSchema
 
 	// Delete cache rows
 	cacheRowsAffected, err := DeleteCacheTx(ctx, tx, imageId)
@@ -376,9 +472,8 @@ func DeleteCacheTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	imageID int,
-) (cacheRows int64, err error) {
-
-	schema := PlutoInstance.Config.DbSchema
+) (deletedFilesCount int64, err error) {
+	schema := PlutoInstance.DbSchema
 
 	cacheQuery := fmt.Sprintf(`DELETE FROM %s.pluto_cache WHERE image_id = $1`, schema)
 	cmdTag, err := tx.Exec(ctx, cacheQuery, imageID)

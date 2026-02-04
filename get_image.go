@@ -2,6 +2,8 @@ package pluto
 
 import (
 	"bytes"
+	"database/sql"
+	"errors"
 
 	"fmt"
 	"image"
@@ -14,6 +16,44 @@ import (
 	"github.com/chai2010/webp"
 	"github.com/gin-gonic/gin"
 )
+
+func GetImageIdByByContext(
+	gc *gin.Context,
+	context string,
+	contextId int,
+	identifier string,
+) (int, bool) {
+	ctx := gc.Request.Context()
+
+	query := fmt.Sprintf(
+		`SELECT pluto_image_id
+         FROM %s.pluto_image_link
+         WHERE context = $1 AND context_id = $2 AND identifier = $3`,
+		PlutoInstance.DbSchema,
+	)
+
+	var imageId *int
+	err := PlutoInstance.DbPool.
+		QueryRow(ctx, query, context, contextId, identifier).
+		Scan(&imageId)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// no row found — valid state
+			return -1, true
+		}
+
+		// Real DB error
+		return -1, false
+	}
+
+	if imageId == nil {
+		// Row exists but pluto_image_id is NULL
+		return -1, true
+	}
+
+	return *imageId, true
+}
 
 func getImage(gc *gin.Context) {
 	ctx := gc.Request.Context()
@@ -72,7 +112,7 @@ func getImage(gc *gin.Context) {
 		}
 	}
 
-	lossless := false // TODO: Implement
+	lossless, ok := GetQueryBoolDefault(gc, "lossless", false)
 
 	knownEdges := 0
 	if width > 0 {
@@ -131,8 +171,26 @@ func getImage(gc *gin.Context) {
 	cacheFileName := imageReceipt + "." + fileTypeStr
 	cacheFilePath := filepath.Join(PlutoInstance.Config.PlutoCacheDir, cacheFileName)
 
+	/* Previous version without using ETag in Header
 	if _, err := os.Stat(cacheFilePath); err == nil {
 		gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
+		gc.File(cacheFilePath)
+		return
+	}
+	*/
+
+	if info, err := os.Stat(cacheFilePath); err == nil {
+		etag := fmt.Sprintf(`"%x-%x"`, info.ModTime().Unix(), info.Size())
+
+		if match := gc.GetHeader("If-None-Match"); match == etag {
+			gc.Status(http.StatusNotModified)
+			return
+		}
+
+		gc.Header("ETag", etag)
+		gc.Header("Cache-Control", "no-cache")
+		gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
+
 		gc.File(cacheFilePath)
 		return
 	}
@@ -141,7 +199,7 @@ func getImage(gc *gin.Context) {
 	var focusX, focusY *float32
 	sql := fmt.Sprintf(`
 		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
-		PlutoInstance.Config.DbSchema)
+		PlutoInstance.DbSchema)
 	err := pool.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
 		gc.String(http.StatusBadRequest, "Image not found")
@@ -176,18 +234,17 @@ func getImage(gc *gin.Context) {
 	var buf bytes.Buffer
 	switch fileTypeStr {
 	case "jpg":
-		fileTypeStr = "jpg"
 		err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
 	case "png":
-		fileTypeStr = "png"
 		err = png.Encode(&buf, img)
 	case "webp":
-		fileTypeStr = "webp"
-		options := &webp.Options{Lossless: lossless}
-		if !lossless {
-			options.Quality = float32(quality)
+		var options webp.Options
+		if lossless {
+			options = webp.Options{Lossless: true}
+		} else {
+			options = webp.Options{Quality: float32(quality), Lossless: false}
 		}
-		err = webp.Encode(&buf, img, options)
+		err = webp.Encode(&buf, img, &options)
 	default:
 		gc.JSON(http.StatusUnsupportedMediaType, gin.H{"error": fmt.Sprintf("Unsupported image format: image/%s", fileTypeStr)})
 		return
@@ -203,7 +260,7 @@ func getImage(gc *gin.Context) {
 		sql = fmt.Sprintf(`
 				INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
 				VALUES ($1, $2, $3)`,
-			PlutoInstance.Config.DbSchema)
+			PlutoInstance.DbSchema)
 		_, _ = pool.Exec(ctx, sql, imageReceipt, imageId, fileTypeStr)
 	}
 

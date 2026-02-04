@@ -10,8 +10,3 @@ Pluto Image Service is a lightweight, high-performance image processing and serv
 - Built with Go for speed and efficiency
 
 ## Usage
-
-Run the service:
-
-```bash
-go run main.go
