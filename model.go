@@ -2,15 +2,19 @@ package pluto
 
 import "time"
 
+type ImageIdentifierValidator func(string) bool
+
+type ImageRefresherCallback func(entity string, ids []int) TxFunc
+
 type ImageMeta struct {
 	Id           *int           `json:"id"`
 	FileName     *string        `json:"file_name,omitempty"`
 	Width        *int           `json:"width,omitempty"`
 	Height       *int           `json:"height,omitempty"`
 	MimeType     *string        `json:"mime_type,omitempty"`
-	Alt          *string        `json:"alt,omitempty"`
+	Alt          *string        `json:"alt_text,omitempty"`
 	Description  *string        `json:"description,omitempty"`
-	License      *int           `json:"license,omitempty"`
+	LicenseType  *string        `json:"license,omitempty"`
 	Exif         map[string]any `json:"exif,omitempty"`
 	Expiration   *string        `json:"expiration_date,omitempty"`
 	Creator      *string        `json:"creator,omitempty"`

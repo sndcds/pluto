@@ -2,6 +2,7 @@ package pluto
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -35,31 +36,44 @@ func UpsertImage(
 	ctx := gc.Request.Context()
 	dbSchema := PlutoInstance.DbSchema
 
-	var result UpsertImageResult
+	fmt.Println("UpsertImage 1")
 
+	var result UpsertImageResult
 	var previousGenFileName *string
 	deleteCacheImageId := -1
 
-	// Get all meta data parameters as pointers
-	altText := getPostFormPtr(gc, "alt")
-	copyright := getPostFormPtr(gc, "copyright")
-	creatorName := getPostFormPtr(gc, "creator")
-	description := getPostFormPtr(gc, "description")
-	focusX, err := getPostFormFloatPtr(gc, "focus_x")
-	if err != nil {
+	// Get meta JSON from form
+	payloadStr := gc.PostForm("payload")
+	fmt.Println("payloadStr", payloadStr)
+	if payloadStr == "" {
 		result.HttpStatus = http.StatusBadRequest
-		return result, fmt.Errorf("failed to save file: %v", err)
+		result.Message = "meta field is required"
+		return result, fmt.Errorf("meta field is required")
 	}
-	focusY, err := getPostFormFloatPtr(gc, "focus_y")
-	if err != nil {
+
+	// Unmarshal JSON into struct
+	var meta ImageMeta
+	if err := json.Unmarshal([]byte(payloadStr), &meta); err != nil {
 		result.HttpStatus = http.StatusBadRequest
-		return result, fmt.Errorf("focus_y must be a float")
+		result.Message = fmt.Sprintf("invalid meta JSON: %v", err)
+		return result, fmt.Errorf("invalid meta JSON: %v", err)
 	}
-	licenseId, err := getPostFormIntPtr(gc, "license")
-	if err != nil {
-		result.HttpStatus = http.StatusBadRequest
-		return result, fmt.Errorf("Invalid license")
-	}
+
+	altText := &meta.Alt
+	copyright := &meta.Copyright
+	creatorName := &meta.Creator
+	description := &meta.Description
+	focusX := meta.FocusX
+	focusY := meta.FocusY
+	licenseType := &meta.LicenseType
+
+	fmt.Println("altText:", altText)
+	fmt.Println("copyright:", copyright)
+	fmt.Println("creatorName:", creatorName)
+	fmt.Println("description:", description)
+	fmt.Println("focusX:", focusX)
+	fmt.Println("focusY:", focusY)
+	fmt.Println("licenseType:", licenseType)
 
 	imageId := -1
 	insertImageFlag := true
@@ -73,7 +87,9 @@ func UpsertImage(
         		 WHERE context = $1 AND context_id = $2 AND identifier = $3`,
 			PlutoInstance.DbSchema,
 		)
-		err = tx.QueryRow(
+		fmt.Println("UpsertImage query", query)
+
+		err := tx.QueryRow(
 			ctx,
 			query,
 			context,
@@ -92,10 +108,15 @@ func UpsertImage(
 			}
 		}
 
+		fmt.Println("   context: ", context)
+		fmt.Println("   contextId: ", contextId)
+		fmt.Println("   identifier: ", identifier)
+
 		insertImageFlag = imageId < 0
 
-		file, err := gc.FormFile("image")
+		file, err := gc.FormFile("file")
 		if file != nil {
+			fmt.Println("file", file.Filename)
 			// Upload a new file
 			// Read file into buffer for multiple uses
 			buf := new(bytes.Buffer)
@@ -196,6 +217,7 @@ UPDATE %s.pluto_image SET file_name = $1, gen_file_name = $2, width = $3, height
 FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 					`, dbSchema, dbSchema, dbSchema)
 
+				fmt.Println("Update query: ", query)
 				err := tx.QueryRow(
 					ctx, query,
 					originalFileName,
@@ -229,11 +251,22 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 			deleteCacheImageId = imageId
 		}
 
+		fmt.Println("prevFocus:", prevFocusX, prevFocusY)
+
 		query = fmt.Sprintf(
 			`UPDATE %s.pluto_image
-			SET alt_text = $1, copyright = $2, creator_name = $3, license_id = $4, description = $5, focus_x = $6, focus_y = $7
+			SET alt_text = $1, copyright = $2, creator_name = $3, license_type = $4, description = $5, focus_x = $6, focus_y = $7
 			WHERE id = $8`,
 			dbSchema)
+		fmt.Println("query:", query)
+		fmt.Println("altText:", altText)
+		fmt.Println("copyright:", copyright)
+		fmt.Println("creatorName:", creatorName)
+		fmt.Println("licenseType:", licenseType)
+		fmt.Println("description:", description)
+		fmt.Println("focusX:", focusX)
+		fmt.Println("focusY:", focusY)
+		fmt.Println("imageId:", imageId)
 
 		// Update pluto_image
 		_, err = tx.Exec(
@@ -241,7 +274,7 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 			altText,
 			copyright,
 			creatorName,
-			licenseId,
+			licenseType,
 			description,
 			focusX,
 			focusY,
@@ -263,6 +296,11 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 				pluto_image_id = EXCLUDED.pluto_image_id
 			RETURNING id`,
 			PlutoInstance.DbSchema)
+		fmt.Println("query:", query)
+		fmt.Println("imageId:", imageId)
+		fmt.Println("context:", context)
+		fmt.Println("contextId:", contextId)
+		fmt.Println("identifier:", identifier)
 
 		var plutoImageLinkId int
 		err = tx.QueryRow(
@@ -294,8 +332,11 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 	})
 	if txErr != nil {
 		result.HttpStatus = txErr.Code
+		result.Message = txErr.Err.Error()
 		return result, txErr.Err
 	}
+
+	fmt.Println("cleanup")
 
 	// Filesystem cleanup (post-commit)
 	cleanup, err := CleanupPlutoImageFiles(deleteCacheImageId, previousGenFileName)
@@ -306,5 +347,8 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 
 	result.HttpStatus = http.StatusOK
 	result.ImageId = imageId
+
+	fmt.Println("imageId", imageId)
+
 	return result, nil
 }

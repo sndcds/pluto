@@ -6,29 +6,31 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/sndcds/pluto/api"
 )
 
 // API: GET /image/:context/:contextId/:identifier/meta
 func getImageMeta(gc *gin.Context) {
 	ctx := gc.Request.Context()
+	apiReponseType := "pluto-image-meta"
 	dbPool := PlutoInstance.DbPool
 	dbSchema := PlutoInstance.DbSchema
 
 	context := gc.Param("context")
 	if context == "" {
-		gc.JSON(http.StatusNotFound, gin.H{"error": "context is required"})
+		api.JSONError(gc, apiReponseType, http.StatusBadRequest, "context is required")
 		return
 	}
 
 	contextId, ok := ParamInt(gc, "contextId")
 	if !ok {
-		gc.JSON(http.StatusNotFound, gin.H{"error": "contextId is required"})
+		api.JSONError(gc, apiReponseType, http.StatusBadRequest, "contextId is required")
 		return
 	}
 
 	identifier := gc.Param("identifier")
 	if identifier == "" {
-		gc.JSON(http.StatusNotFound, gin.H{"error": "identifier is required"})
+		api.JSONError(gc, apiReponseType, http.StatusBadRequest, "identifier is required")
 		return
 	}
 
@@ -41,7 +43,7 @@ func getImageMeta(gc *gin.Context) {
             pi.mime_type, 
             pi.alt_text, 
             pi.description,
-            pi.license_id, 
+            pi.license_type, 
             pi.exif, 
             pi.expiration_date, 
             pi.creator_name, 
@@ -66,7 +68,7 @@ func getImageMeta(gc *gin.Context) {
 		&meta.MimeType,
 		&meta.Alt,
 		&meta.Description,
-		&meta.License,
+		&meta.LicenseType,
 		&meta.Exif,
 		&meta.Expiration,
 		&meta.Creator,
@@ -80,20 +82,20 @@ func getImageMeta(gc *gin.Context) {
 	)
 
 	if meta.Id == nil {
-		gc.JSON(http.StatusNotFound, gin.H{"error": "image not found"})
+		api.JSONError(gc, apiReponseType, http.StatusNotFound, "image not found")
 		return
 	}
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			// No image found for this entity + index
-			gc.JSON(http.StatusNotFound, gin.H{"error": "image not found"})
+			api.JSONError(gc, apiReponseType, http.StatusNotFound, "mage not found")
 			return
 		}
-		// Some other DB error
-		gc.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+		api.JSONDatabaseError(gc, apiReponseType)
 		return
 	}
 
-	gc.JSON(http.StatusOK, meta)
+	api.JSONSuccess(gc, apiReponseType, meta, nil)
 }
