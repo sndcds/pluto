@@ -65,7 +65,7 @@ func UpsertImage(
 	description := &meta.Description
 	focusX := meta.FocusX
 	focusY := meta.FocusY
-	licenseType := &meta.LicenseType
+	license := &meta.License
 
 	fmt.Println("altText:", altText)
 	fmt.Println("copyright:", copyright)
@@ -73,7 +73,7 @@ func UpsertImage(
 	fmt.Println("description:", description)
 	fmt.Println("focusX:", focusX)
 	fmt.Println("focusY:", focusY)
-	fmt.Println("licenseType:", licenseType)
+	fmt.Println("license:", license)
 
 	imageId := -1
 	insertImageFlag := true
@@ -255,14 +255,14 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 
 		query = fmt.Sprintf(
 			`UPDATE %s.pluto_image
-			SET alt_text = $1, copyright = $2, creator_name = $3, license_type = $4, description = $5, focus_x = $6, focus_y = $7
+			SET alt_text = $1, copyright = $2, creator_name = $3, license = $4, description = $5, focus_x = $6, focus_y = $7
 			WHERE id = $8`,
 			dbSchema)
 		fmt.Println("query:", query)
 		fmt.Println("altText:", altText)
 		fmt.Println("copyright:", copyright)
 		fmt.Println("creatorName:", creatorName)
-		fmt.Println("licenseType:", licenseType)
+		fmt.Println("license:", license)
 		fmt.Println("description:", description)
 		fmt.Println("focusX:", focusX)
 		fmt.Println("focusY:", focusY)
@@ -274,7 +274,7 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 			altText,
 			copyright,
 			creatorName,
-			licenseType,
+			license,
 			description,
 			focusX,
 			focusY,
