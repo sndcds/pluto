@@ -47,8 +47,8 @@ func UpsertImage(
 	fmt.Println("payloadStr", payloadStr)
 	if payloadStr == "" {
 		result.HttpStatus = http.StatusBadRequest
-		result.Message = "meta field is required"
-		return result, fmt.Errorf("meta field is required")
+		result.Message = "payload field is required"
+		return result, fmt.Errorf("payload field is required")
 	}
 
 	// Unmarshal JSON into struct
@@ -108,6 +108,7 @@ func UpsertImage(
 			}
 		}
 
+		fmt.Println("   imageId: ", imageId)
 		fmt.Println("   context: ", context)
 		fmt.Println("   contextId: ", contextId)
 		fmt.Println("   identifier: ", identifier)
@@ -236,6 +237,11 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 				}
 				result.Message = "image updated successfully"
 				deleteCacheImageId = imageId
+			}
+		} else {
+			return &ApiTxError{
+				Code: http.StatusInternalServerError,
+				Err:  fmt.Errorf("missing file to upload: %v", err), // TODO: Check!
 			}
 		}
 
