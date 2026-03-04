@@ -36,6 +36,8 @@ func UpsertImage(
 	ctx := gc.Request.Context()
 	dbSchema := PlutoInstance.DbSchema
 
+	// TODO: check if file is present!
+
 	fmt.Println("UpsertImage 1")
 
 	var result UpsertImageResult
@@ -237,11 +239,6 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 				}
 				result.Message = "image updated successfully"
 				deleteCacheImageId = imageId
-			}
-		} else {
-			return &ApiTxError{
-				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("missing file to upload: %v", err), // TODO: Check!
 			}
 		}
 
