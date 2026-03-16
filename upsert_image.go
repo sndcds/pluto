@@ -69,14 +69,6 @@ func UpsertImage(
 	focusY := meta.FocusY
 	license := &meta.License
 
-	fmt.Println("altText:", altText)
-	fmt.Println("copyright:", copyright)
-	fmt.Println("creatorName:", creatorName)
-	fmt.Println("description:", description)
-	fmt.Println("focusX:", focusX)
-	fmt.Println("focusY:", focusY)
-	fmt.Println("license:", license)
-
 	imageId := -1
 	insertImageFlag := true
 
@@ -89,7 +81,6 @@ func UpsertImage(
         		 WHERE context = $1 AND context_id = $2 AND identifier = $3`,
 			PlutoInstance.DbSchema,
 		)
-		fmt.Println("UpsertImage query", query)
 
 		err := tx.QueryRow(
 			ctx,
@@ -110,17 +101,12 @@ func UpsertImage(
 			}
 		}
 
-		fmt.Println("   imageId: ", imageId)
-		fmt.Println("   context: ", context)
-		fmt.Println("   contextId: ", contextId)
-		fmt.Println("   identifier: ", identifier)
-
 		insertImageFlag = imageId < 0
 
 		file, err := gc.FormFile("file")
 		if file != nil {
-			fmt.Println("file", file.Filename)
 			// Upload a new file
+			// TODO: Check max file size
 			// Read file into buffer for multiple uses
 			buf := new(bytes.Buffer)
 			src, err := file.Open()
@@ -188,6 +174,8 @@ func UpsertImage(
 					Err:  fmt.Errorf("failed to save file: %v", err),
 				}
 			}
+
+			// TODO: Downscale file depending context and identifier
 
 			if insertImageFlag {
 				// Insert new pluto image
