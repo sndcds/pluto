@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/chai2010/webp"
+	"github.com/disintegration/imaging"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/rwcarlsen/goexif/exif"
@@ -36,15 +38,16 @@ func UpsertImage(
 	ctx := gc.Request.Context()
 	dbSchema := PlutoInstance.DbSchema
 
-	// TODO: check if file is present!
-
-	fmt.Println("UpsertImage 1")
+	maxUploadSize := PlutoInstance.Config.PlutoMaxImageSize
+	maxWidth := PlutoInstance.Config.PlutoMaxImagePx
+	maxHeight := PlutoInstance.Config.PlutoMaxImagePx
+	compressionQuality := PlutoInstance.Config.PlutoDefaultQuality
 
 	var result UpsertImageResult
 	var previousGenFileName *string
 	deleteCacheImageId := -1
 
-	// Get meta JSON from form
+	// Get meta JSON from formdata
 	payloadStr := gc.PostForm("payload")
 	fmt.Println("payloadStr", payloadStr)
 	if payloadStr == "" {
@@ -57,8 +60,8 @@ func UpsertImage(
 	var meta ImageMeta
 	if err := json.Unmarshal([]byte(payloadStr), &meta); err != nil {
 		result.HttpStatus = http.StatusBadRequest
-		result.Message = fmt.Sprintf("invalid meta JSON: %v", err)
-		return result, fmt.Errorf("invalid meta JSON: %v", err)
+		result.Message = "invalid payload"
+		return result, fmt.Errorf("invalid payload")
 	}
 
 	altText := &meta.Alt
@@ -74,29 +77,65 @@ func UpsertImage(
 
 	txErr := WithTransaction(ctx, PlutoInstance.DbPool, func(tx pgx.Tx) *ApiTxError {
 
-		// Get imageId
+		// Check context/identifier rules
+
+		var contextMaxWidth *int
+		var contextMaxHeight *int
+		var contextMaxFileSize *int64
+		var contextCompression *int
+		contextRuleFound := true
 		query := fmt.Sprintf(
+			`SELECT max_width, max_height, max_file_size, compression
+		         FROM %s.pluto_context_rules
+        		 WHERE context = $1 AND identifier = $2`,
+			PlutoInstance.DbSchema,
+		)
+		err := tx.QueryRow(ctx, query, context, identifier).Scan(
+			&contextMaxWidth, &contextMaxHeight, &contextMaxFileSize, &contextCompression)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				contextRuleFound = false
+				imageId = -1
+			} else {
+				return &ApiTxError{
+					Code: http.StatusInternalServerError,
+					Err:  fmt.Errorf("failed to get image_id"),
+				}
+			}
+		}
+		if contextRuleFound {
+			if contextMaxWidth != nil {
+				maxWidth = *contextMaxWidth
+			}
+			if contextMaxHeight != nil {
+				maxHeight = *contextMaxHeight
+			}
+			if contextMaxFileSize != nil {
+				maxUploadSize = *contextMaxFileSize
+			}
+			if contextCompression != nil {
+				compressionQuality = *contextCompression
+			}
+		}
+
+		fmt.Println("maxWidth", maxWidth, "maxHeight", maxHeight, "maxUploadSize", maxUploadSize, "compressionQuality", compressionQuality)
+
+		// Get imageId
+		query = fmt.Sprintf(
 			`SELECT pluto_image_id
 		         FROM %s.pluto_image_link
         		 WHERE context = $1 AND context_id = $2 AND identifier = $3`,
 			PlutoInstance.DbSchema,
 		)
 
-		err := tx.QueryRow(
-			ctx,
-			query,
-			context,
-			contextId,
-			identifier,
-		).Scan(&imageId)
-
+		err = tx.QueryRow(ctx, query, context, contextId, identifier).Scan(&imageId)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				imageId = -1
 			} else {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("failed to get image_id: %v", err),
+					Err:  fmt.Errorf("failed to get image_id"),
 				}
 			}
 		}
@@ -106,14 +145,24 @@ func UpsertImage(
 		file, err := gc.FormFile("file")
 		if file != nil {
 			// Upload a new file
-			// TODO: Check max file size
+
+			// Check file size
+			if file.Size > maxUploadSize {
+				return &ApiTxError{
+					Code: http.StatusBadRequest,
+					Err: fmt.Errorf(
+						"file too large, max size %.2f MB, file has %.2f MB",
+						float64(maxUploadSize)/(1<<20),
+						float64(file.Size)/(1<<20))}
+			}
+
 			// Read file into buffer for multiple uses
 			buf := new(bytes.Buffer)
 			src, err := file.Open()
 			if err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("failed to open uploaded file: %v", err),
+					Err:  fmt.Errorf("failed to open uploaded file"),
 				}
 			}
 			defer src.Close()
@@ -121,27 +170,72 @@ func UpsertImage(
 			if _, err := io.Copy(buf, src); err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("failed to read uploaded file: %v", err),
+					Err:  fmt.Errorf("failed to read uploaded file"),
 				}
 			}
 
 			// Detect MIME type (use only first 512 bytes for detection)
-			mimeType := http.DetectContentType(buf.Bytes()[:512])
-
-			// Decode image config for dimensions
-			cfg, _, err := image.DecodeConfig(bytes.NewReader(buf.Bytes()))
-			if err != nil {
-				return &ApiTxError{
-					Code: http.StatusBadRequest,
-					Err:  fmt.Errorf("invalid image: %v", err),
-				}
+			head := buf.Bytes()
+			if len(head) > 512 {
+				head = head[:512]
 			}
+			mimeType := http.DetectContentType(head)
 
 			// Decode EXIF metadata if present
 			exifData := make(map[string]string)
 			x, err := exif.Decode(bytes.NewReader(buf.Bytes()))
 			if err == nil {
 				x.Walk(&exifWalker{m: exifData})
+			}
+
+			// Decode full image (needed for resizing)
+			img, _, err := image.Decode(bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				return &ApiTxError{
+					Code: http.StatusBadRequest,
+					Err:  fmt.Errorf("invalid image"),
+				}
+			}
+
+			imageWidth := img.Bounds().Dx()
+			imageHeight := img.Bounds().Dy()
+
+			// Downscale if needed
+			if imageWidth > maxWidth || imageHeight > maxHeight {
+				img = imaging.Fit(img, maxWidth, maxHeight, imaging.Lanczos)
+
+				// Encode back into buffer (overwrite original!)
+				buf.Reset()
+
+				switch mimeType {
+				case "image/png":
+					err = imaging.Encode(buf, img, imaging.PNG)
+
+				case "image/jpeg":
+					err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(compressionQuality))
+
+				case "image/webp":
+					err = webp.Encode(buf, img, &webp.Options{
+						Quality: float32(compressionQuality),
+					})
+
+				default:
+					return &ApiTxError{
+						Code: http.StatusInternalServerError,
+						Err:  fmt.Errorf("failed to encode resized image: unknown mime type"),
+					}
+				}
+
+				if err != nil {
+					return &ApiTxError{
+						Code: http.StatusInternalServerError,
+						Err:  fmt.Errorf("failed to encode resized image: %v", err),
+					}
+				}
+
+				// Update dimensions after resize
+				imageWidth = img.Bounds().Dx()
+				imageHeight = img.Bounds().Dy()
 			}
 
 			// Sanitize and generate filename
@@ -175,8 +269,6 @@ func UpsertImage(
 				}
 			}
 
-			// TODO: Downscale file depending context and identifier
-
 			if insertImageFlag {
 				// Insert new pluto image
 				query := fmt.Sprintf(`
@@ -188,7 +280,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
 					ctx, query,
 					originalFileName,
 					generatedFileName,
-					cfg.Width, cfg.Height,
+					imageWidth, imageHeight,
 					mimeType,
 					exifData,
 					userId).
@@ -213,8 +305,8 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 					ctx, query,
 					originalFileName,
 					generatedFileName,
-					cfg.Width,
-					cfg.Height,
+					imageWidth,
+					imageHeight,
 					mimeType,
 					exifData,
 					imageId,
@@ -309,7 +401,7 @@ FROM image WHERE %s.pluto_image.id = $7 RETURNING image.gen_file_name
 			}
 		}
 
-		// 🔑 call the callback INSIDE the transaction
+		// Call the callback inside the transaction
 		if postCallback != nil {
 			if err := postCallback(ctx, tx); err != nil {
 				return &ApiTxError{

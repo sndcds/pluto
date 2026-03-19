@@ -6,31 +6,32 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
-	"github.com/sndcds/pluto/api"
+
+	"github.com/sndcds/grains/grains_api"
 )
 
 // API: GET /image/:context/:contextId/:identifier/meta
 func getImageMeta(gc *gin.Context) {
 	ctx := gc.Request.Context()
-	apiReponseType := "pluto-image-meta"
 	dbPool := PlutoInstance.DbPool
 	dbSchema := PlutoInstance.DbSchema
+	apiRequest := grains_api.NewRequest(gc, "get-pluto-image-meta")
 
 	context := gc.Param("context")
 	if context == "" {
-		api.JSONError(gc, apiReponseType, http.StatusBadRequest, "context is required")
+		apiRequest.Error(http.StatusBadRequest, "context is required")
 		return
 	}
 
 	contextId, ok := ParamInt(gc, "contextId")
 	if !ok {
-		api.JSONError(gc, apiReponseType, http.StatusBadRequest, "contextId is required")
+		apiRequest.Error(http.StatusBadRequest, "contextId is required")
 		return
 	}
 
 	identifier := gc.Param("identifier")
 	if identifier == "" {
-		api.JSONError(gc, apiReponseType, http.StatusBadRequest, "identifier is required")
+		apiRequest.Error(http.StatusBadRequest, "identifier is required")
 		return
 	}
 
@@ -82,20 +83,20 @@ func getImageMeta(gc *gin.Context) {
 	)
 
 	if meta.Id == nil {
-		api.JSONError(gc, apiReponseType, http.StatusNotFound, "image not found")
+		apiRequest.Error(http.StatusNotFound, "image not found")
 		return
 	}
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			// No image found for this entity + index
-			api.JSONError(gc, apiReponseType, http.StatusNotFound, "mage not found")
+			apiRequest.Error(http.StatusNotFound, "image not found")
 			return
 		}
 
-		api.JSONDatabaseError(gc, apiReponseType)
+		apiRequest.DatabaseError()
 		return
 	}
 
-	api.JSONSuccess(gc, apiReponseType, meta, nil)
+	apiRequest.Success(http.StatusOK, meta, "")
 }

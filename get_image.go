@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
-
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/chai2010/webp"
 	"github.com/gin-gonic/gin"
+	"github.com/sndcds/grains/grains_api"
 )
 
 func GetImageIdByByContext(
@@ -58,29 +58,30 @@ func GetImageIdByByContext(
 func getImage(gc *gin.Context) {
 	ctx := gc.Request.Context()
 	pool := PlutoInstance.DbPool
+	apiRequest := grains_api.NewRequest(gc, "get-pluto-image")
 
 	imageId, ok := ParamInt(gc, "id")
 	if !ok {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid image id"})
+		apiRequest.Error(http.StatusBadRequest, "imageId is required")
 		return
 	}
 
 	fileTypeStr := gc.DefaultQuery("type", "jpg")
 	if fileTypeStr != "jpg" && fileTypeStr != "png" && fileTypeStr != "webp" {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid image type"})
+		apiRequest.Error(http.StatusBadRequest, "invalid type parameter, must be one of 'jpg', 'png' or 'webp'")
 		return
 	}
 
 	fitStr := gc.DefaultQuery("fit", "")
 	if fitStr != "" && fitStr != "cover" {
-		// TODO: Support mor  fit types like in CSS
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid fit mode"})
+		// TODO: Support more  fit types like in CSS
+		apiRequest.Error(http.StatusBadRequest, "invalid fit parameter")
 		return
 	}
 
 	quality, ok := GetQueryIntDefault(gc, "quality", 80)
 	if !ok {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid quality"})
+		apiRequest.Error(http.StatusBadRequest, "invalid quality parameter")
 		return
 	}
 	if quality < 0 {
@@ -91,13 +92,13 @@ func getImage(gc *gin.Context) {
 
 	width, ok := GetQueryIntDefault(gc, "width", 0)
 	if !ok {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid width"})
+		apiRequest.Error(http.StatusBadRequest, "invalid width parameter")
 		return
 	}
 
 	height, ok := GetQueryIntDefault(gc, "height", 0)
 	if !ok {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid height"})
+		apiRequest.Error(http.StatusBadRequest, "invalid height parameter")
 		return
 	}
 
@@ -107,7 +108,7 @@ func getImage(gc *gin.Context) {
 		var err error
 		ratio, err = ParseAspectRatio(ratioStr)
 		if err != nil {
-			gc.JSON(http.StatusBadRequest, gin.H{"error": "invalid ratio"})
+			apiRequest.Error(http.StatusBadRequest, "invalid ratio parameter")
 			return
 		}
 	}
@@ -124,7 +125,7 @@ func getImage(gc *gin.Context) {
 
 	if hasRatio && knownEdges == 1 {
 		if ratio <= 0.0001 {
-			gc.String(http.StatusBadRequest, "Invalid ratio format. Use format like '16:9'")
+			apiRequest.Error(http.StatusBadRequest, "invalid ratio format")
 			return
 		}
 		if width > 0 {
@@ -132,7 +133,7 @@ func getImage(gc *gin.Context) {
 		} else if height > 0 {
 			width = int(float32(height) * ratio)
 		} else {
-			gc.String(http.StatusBadRequest, "Either width or height must be provided if using ratio")
+			apiRequest.Error(http.StatusBadRequest, "either width or height must be provided if using ratio")
 			return
 		}
 	}
@@ -179,19 +180,9 @@ func getImage(gc *gin.Context) {
 	}
 	*/
 
-	if info, err := os.Stat(cacheFilePath); err == nil {
-		etag := fmt.Sprintf(`"%x-%x"`, info.ModTime().Unix(), info.Size())
-
-		if match := gc.GetHeader("If-None-Match"); match == etag {
-			gc.Status(http.StatusNotModified)
-			return
-		}
-
-		gc.Header("ETag", etag)
-		gc.Header("Cache-Control", "no-cache")
-		gc.Header("Content-Disposition", `inline; filename="`+cacheFileName+`"`)
-
-		gc.File(cacheFilePath)
+	// Check if file exist, if so deliver that file
+	if _, err := os.Stat(cacheFilePath); err == nil {
+		serveCacheFile(gc, cacheFilePath, cacheFileName)
 		return
 	}
 
@@ -202,20 +193,20 @@ func getImage(gc *gin.Context) {
 		PlutoInstance.DbSchema)
 	err := pool.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
-		gc.String(http.StatusBadRequest, "Image not found")
+		apiRequest.Error(http.StatusBadRequest, "Image not found")
 		return
 	}
 
 	imgPath := filepath.Join(PlutoInstance.Config.PlutoImageDir, genFileName)
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
-		gc.String(http.StatusInternalServerError, "Failed to read image")
+		apiRequest.Error(http.StatusInternalServerError, "Image not found")
 		return
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(fileBytes))
 	if err != nil {
-		gc.String(http.StatusInternalServerError, "Invalid image format")
+		apiRequest.Error(http.StatusInternalServerError, "Image not found")
 		return
 	}
 
@@ -246,11 +237,11 @@ func getImage(gc *gin.Context) {
 		}
 		err = webp.Encode(&buf, img, &options)
 	default:
-		gc.JSON(http.StatusUnsupportedMediaType, gin.H{"error": fmt.Sprintf("Unsupported image format: image/%s", fileTypeStr)})
+		apiRequest.Error(http.StatusUnsupportedMediaType, fmt.Sprintf("unsupported image format: image/%s", fileTypeStr))
 		return
 	}
 	if err != nil {
-		gc.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to encode image: /%v", err.Error())})
+		apiRequest.Error(http.StatusUnsupportedMediaType, "failed to encode image")
 		return
 	}
 

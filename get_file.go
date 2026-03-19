@@ -17,13 +17,13 @@ func getFile(gc *gin.Context) {
 
 	// Security: Disallow path traversal attempts
 	if strings.Contains(file, "..") || filepath.IsAbs(file) {
-		gc.AbortWithStatusJSON(400, gin.H{"error": "Invalid file path"})
+		gc.AbortWithStatusJSON(400, gin.H{"error": "invalid file path"})
 		return
 	}
 
 	// Check if file exists
 	if stat, err := os.Stat(cacheFilePath); err != nil || stat.IsDir() {
-		gc.AbortWithStatusJSON(404, gin.H{"error": "File not found"})
+		gc.AbortWithStatusJSON(404, gin.H{"error": "file not found"})
 		return
 	}
 

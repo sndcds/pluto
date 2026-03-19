@@ -18,6 +18,7 @@ type Config struct {
 	PlutoRoute            string `json:"pluto_route"`
 	PlutoImageDir         string `json:"pluto_image_dir"`
 	PlutoCacheDir         string `json:"pluto_cache_dir"`
+	PlutoMaxImageSize     int64  `json:"pluto_max_image_size"`
 	PlutoMaxImagePx       int    `json:"pluto_max_image_px"`
 	PlutoDefaultQuality   int    `json:"pluto_default_quality"`
 	PlutoDefaultImageType string `json:"pluto_default_image_type"`
@@ -37,6 +38,7 @@ func DefaultConfig() Config {
 		PlutoRoute:            "/image",
 		PlutoImageDir:         "",
 		PlutoCacheDir:         "",
+		PlutoMaxImageSize:     int64(10 << 20), // 10 Mb
 		PlutoMaxImagePx:       4096,
 		PlutoDefaultQuality:   85,
 		PlutoDefaultImageType: "webp",

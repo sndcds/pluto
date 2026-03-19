@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sndcds/grains/grains_api"
 )
 
 type Pluto struct {
@@ -34,6 +35,12 @@ func Initialize(configFilePath string, pool *pgxpool.Pool, verbose bool) (*Pluto
 	if err := pluto.loadConfig(configFilePath); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
+
+	grains_api.Init(grains_api.Config{
+		ServiceName: "Pluto API",
+		APIVersion:  "1.0",
+		TimeFormat:  "", // Use default
+	})
 
 	pluto.Log("prepare sql")
 	if err := pluto.prepareSql(); err != nil {
