@@ -17,52 +17,52 @@ import (
 	"github.com/sndcds/grains/grains_api"
 )
 
-func GetImageIdByByContext(
+func GetImageUuidByByContext(
 	gc *gin.Context,
 	context string,
-	contextId int,
+	contextUuid string,
 	identifier string,
-) (int, bool) {
+) (string, bool) {
 	ctx := gc.Request.Context()
 
 	query := fmt.Sprintf(
-		`SELECT pluto_image_id
+		`SELECT pluto_image_uuid
          FROM %s.pluto_image_link
-         WHERE context = $1 AND context_id = $2 AND identifier = $3`,
+         WHERE context = $1 AND context_uuid = $2 AND identifier = $3`,
 		PlutoInstance.DbSchema,
 	)
 
-	var imageId *int
+	var imageUuid *string
 	err := PlutoInstance.DbPool.
-		QueryRow(ctx, query, context, contextId, identifier).
-		Scan(&imageId)
+		QueryRow(ctx, query, context, contextUuid, identifier).
+		Scan(&imageUuid)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// no row found — valid state
-			return -1, true
+			return "", true
 		}
 
 		// Real DB error
-		return -1, false
+		return "", false
 	}
 
-	if imageId == nil {
-		// Row exists but pluto_image_id is NULL
-		return -1, true
+	if imageUuid == nil {
+		// Row exists but pluto_image_uuid is nil
+		return "", true
 	}
 
-	return *imageId, true
+	return *imageUuid, true
 }
 
 func getImage(gc *gin.Context) {
+	apiRequest := grains_api.NewRequest(gc, "get-pluto-image")
 	ctx := gc.Request.Context()
 	pool := PlutoInstance.DbPool
-	apiRequest := grains_api.NewRequest(gc, "get-pluto-image")
 
-	imageId, ok := ParamInt(gc, "id")
-	if !ok {
-		apiRequest.Error(http.StatusBadRequest, "imageId is required")
+	imageUuid := gc.Param("uuid")
+	if imageUuid == "" {
+		apiRequest.Error(http.StatusBadRequest, "uuid is required")
 		return
 	}
 
@@ -168,7 +168,7 @@ func getImage(gc *gin.Context) {
 		paramValues += "_" + EncodeFloat32ForPath(ratio)
 	}
 
-	imageReceipt := fmt.Sprintf("%x_%s_%s", imageId, paramCode, paramValues)
+	imageReceipt := fmt.Sprintf("%s_%s_%s", imageUuid, paramCode, paramValues)
 	cacheFileName := imageReceipt + "." + fileTypeStr
 	cacheFilePath := filepath.Join(PlutoInstance.Config.PlutoCacheDir, cacheFileName)
 
@@ -189,9 +189,9 @@ func getImage(gc *gin.Context) {
 	var fileName, genFileName, mimeType string
 	var focusX, focusY *float32
 	sql := fmt.Sprintf(`
-		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
+		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y FROM %s.pluto_image WHERE uuid = $1`,
 		PlutoInstance.DbSchema)
-	err := pool.QueryRow(ctx, sql, imageId).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
+	err := pool.QueryRow(ctx, sql, imageUuid).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
 		apiRequest.Error(http.StatusBadRequest, "Image not found")
 		return
@@ -249,10 +249,10 @@ func getImage(gc *gin.Context) {
 	err = os.WriteFile(cacheFilePath, buf.Bytes(), 0644)
 	if err == nil {
 		sql = fmt.Sprintf(`
-				INSERT INTO %s.pluto_cache (receipt, image_id, mime_type)
-				VALUES ($1, $2, $3)`,
+				INSERT INTO %s.pluto_cache (receipt, pluto_image_uuid, mime_type)
+				VALUES ($1, $2::uuid, $3)`,
 			PlutoInstance.DbSchema)
-		_, _ = pool.Exec(ctx, sql, imageReceipt, imageId, fileTypeStr)
+		_, _ = pool.Exec(ctx, sql, imageReceipt, imageUuid, fileTypeStr)
 	}
 
 	gc.Header("Content-Type", "image/"+fileTypeStr)
