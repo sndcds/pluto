@@ -296,10 +296,7 @@ type ImageCleanupResult struct {
 	ImageFileRemoved  bool
 }
 
-func CleanupPlutoImageFiles(
-	imageUuid string,
-	fileName *string,
-) (*ImageCleanupResult, error) {
+func CleanupPlutoImageFiles(imageUuid string, fileName string) (*ImageCleanupResult, error) {
 	result := &ImageCleanupResult{}
 
 	// Always clean cache (safe even if image doesn't exist)
@@ -310,8 +307,8 @@ func CleanupPlutoImageFiles(
 	result.CacheFilesRemoved = cacheFilesRemoved
 
 	// Only clean image file if we actually have a filename
-	if fileName != nil && *fileName != "" {
-		imageFileRemoved, err := CleanupPlutoImage(*fileName)
+	if fileName != "" {
+		imageFileRemoved, err := CleanupPlutoImage(fileName)
 		if err != nil {
 			return result, err
 		}

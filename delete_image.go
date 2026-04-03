@@ -30,7 +30,7 @@ func DeleteImage(
 	dbSchema := PlutoInstance.DbSchema
 
 	var result DeleteImageResult
-	var genFileName *string
+	genFileName := ""
 	imageUuid := ""
 
 	txErr := WithTransaction(ctx, PlutoInstance.DbPool, func(tx pgx.Tx) *ApiTxError {

@@ -46,12 +46,11 @@ func UpsertImage(
 	compressionQuality := PlutoInstance.Config.PlutoDefaultQuality
 
 	var result UpsertImageResult
-	var previousGenFileName *string
+	genFileName := ""
+	prevGenFileName := ""
 	deleteCacheImageUuid := ""
 
-	// Get meta JSON from formdata
 	payloadStr := gc.PostForm("payload")
-	fmt.Println("payloadStr", payloadStr)
 	if payloadStr == "" {
 		result.HttpStatus = http.StatusBadRequest
 		result.Message = "payload field is required"
@@ -75,7 +74,7 @@ func UpsertImage(
 	license := &meta.License
 
 	imageUuid := ""
-	insertImageFlag := true
+	insertImageFlag := false
 
 	txErr := WithTransaction(ctx, PlutoInstance.DbPool, func(tx pgx.Tx) *ApiTxError {
 		// Check context/identifier rules
@@ -93,7 +92,6 @@ func UpsertImage(
 		err := tx.QueryRow(ctx, query, context, identifier).Scan(
 			&contextMaxWidth, &contextMaxHeight, &contextMaxFileSize, &contextCompression)
 		if err != nil {
-			fmt.Printf("Error: %s", err.Error())
 			if errors.Is(err, pgx.ErrNoRows) {
 				contextRuleFound = false
 				imageUuid = ""
@@ -119,7 +117,7 @@ func UpsertImage(
 			}
 		}
 
-		// Get imageId
+		// Get imageUuid
 		query = fmt.Sprintf(
 			`SELECT pluto_image_uuid
 		         FROM %s.pluto_image_link
@@ -127,18 +125,12 @@ func UpsertImage(
 			PlutoInstance.DbSchema,
 		)
 
-		fmt.Println(query)
-		fmt.Println("context", context)
-		fmt.Println("contextUuid", contextUuid)
-		fmt.Println("identifier", identifier)
-
 		err = tx.QueryRow(ctx, query, context, contextUuid, identifier).Scan(&imageUuid)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				fmt.Printf("Error: %s\n", err.Error())
 				imageUuid = ""
+				insertImageFlag = true
 			} else {
-				fmt.Printf("Error: %s\n", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
 					Err:  errors.New("failed to get pluto_image_uuid"),
@@ -146,12 +138,13 @@ func UpsertImage(
 			}
 		}
 
-		insertImageFlag = imageUuid == ""
-		fmt.Println("..... 1: imageUuid", imageUuid)
-		fmt.Println("..... 2: insertImageFlag", insertImageFlag)
+		fmt.Println("insertImageFlag", insertImageFlag)
 
 		file, err := gc.FormFile("file")
 		if file != nil {
+
+			fmt.Println("upload file with size", file.Size)
+
 			// Check file size
 			if file.Size > maxUploadSize {
 				return &ApiTxError{
@@ -161,6 +154,8 @@ func UpsertImage(
 						float64(maxUploadSize)/(1<<20),
 						float64(file.Size)/(1<<20))}
 			}
+
+			fmt.Println("read file into buffer")
 
 			// Read file into buffer for multiple uses
 			buf := new(bytes.Buffer)
@@ -189,12 +184,16 @@ func UpsertImage(
 			}
 			mimeType := http.DetectContentType(head)
 
+			fmt.Println("mimeType", mimeType)
+
 			// Decode EXIF metadata if present
 			exifData := make(map[string]string)
 			x, err := exif.Decode(bytes.NewReader(buf.Bytes()))
 			if err == nil {
 				x.Walk(&exifWalker{m: exifData})
 			}
+
+			fmt.Println("exifData", exifData)
 
 			// Decode full image (needed for resizing)
 			img, _, err := image.Decode(bytes.NewReader(buf.Bytes()))
@@ -208,9 +207,14 @@ func UpsertImage(
 			imageWidth := img.Bounds().Dx()
 			imageHeight := img.Bounds().Dy()
 
+			fmt.Println("imageWidth", imageWidth)
+			fmt.Println("imageHeight", imageHeight)
+
 			// Downscale if needed
 			if imageWidth > maxWidth || imageHeight > maxHeight {
 				img = imaging.Fit(img, maxWidth, maxHeight, imaging.Lanczos)
+
+				fmt.Println("downscale")
 
 				// Encode back into buffer (overwrite original!)
 				buf.Reset()
@@ -245,27 +249,35 @@ func UpsertImage(
 				// Update dimensions after resize
 				imageWidth = img.Bounds().Dx()
 				imageHeight = img.Bounds().Dy()
+
+				fmt.Println("downscaled imageWidth", imageWidth)
+				fmt.Println("downscaled imageHeight", imageHeight)
 			}
 
-			// Generate uuid
-			uuid, err := grains_uuid.Uuidv7String()
-			if err != nil {
-				fmt.Printf("Error: %s", err.Error())
-				return &ApiTxError{
-					Code: http.StatusInternalServerError,
-					Err:  errors.New("failed to generate uuid"),
+			// Generate uuid if neccessary
+			fmt.Println("existing imageUuid", imageUuid)
+
+			if imageUuid == "" {
+				imageUuid, err = grains_uuid.Uuidv7String()
+				if err != nil {
+					fmt.Printf("Error: %s", err.Error())
+					return &ApiTxError{
+						Code: http.StatusInternalServerError,
+						Err:  errors.New("failed to generate uuid"),
+					}
 				}
+				fmt.Println("generated imageUuid", imageUuid)
 			}
 
 			// Sanitize and generate filename
 			originalFileName := filepath.Base(file.Filename)
 			fileExt := filepath.Ext(originalFileName)
-			generatedFileName := fmt.Sprintf("%s%s", uuid, fileExt)
+			genFileName = fmt.Sprintf("%s%s", imageUuid, fileExt)
 
-			fmt.Printf("uuid: %s\n", uuid)
+			fmt.Printf("uuid: %s\n", imageUuid)
 			fmt.Printf("originalFileName: %s\n", originalFileName)
 			fmt.Printf("fileExt: %s\n", fileExt)
-			fmt.Printf("generatedFileName: %s\n", generatedFileName)
+			fmt.Printf("genFileName: %s\n", genFileName)
 
 			if err != nil {
 				fmt.Printf("Error: %s", err.Error())
@@ -286,11 +298,14 @@ func UpsertImage(
 			}
 
 			if fileNamePrefix != nil {
-				generatedFileName = fmt.Sprintf("%s_%s", *fileNamePrefix, generatedFileName)
+				genFileName = fmt.Sprintf("%s_%s", *fileNamePrefix, genFileName)
+				fmt.Printf("genFileName with prefix: %s\n", genFileName)
 			}
 
-			savePath := filepath.Join(imageDir, generatedFileName)
-			if err = os.WriteFile(savePath, buf.Bytes(), 0644); err != nil {
+			savePath := filepath.Join(imageDir, genFileName)
+			fmt.Printf("savePath: %s\n", savePath)
+			err = os.WriteFile(savePath, buf.Bytes(), 0644)
+			if err != nil {
 				fmt.Printf("Error: %s", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
@@ -298,24 +313,27 @@ func UpsertImage(
 				}
 			}
 
+			fmt.Printf("insertImageFlag: %t\n", insertImageFlag)
+
 			if insertImageFlag {
+				fmt.Printf("Insert new pluto image\n")
+
 				// Insert new pluto image
 				query := fmt.Sprintf(`
 INSERT INTO %s.pluto_image (uuid, file_name, gen_file_name, width, height, mime_type, exif, created_by)
 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::uuid) RETURNING uuid`,
 					dbSchema)
 
-				err = tx.QueryRow(
+				_, err = tx.Exec(
 					ctx, query,
-					uuid,
+					imageUuid,
 					originalFileName,
-					generatedFileName,
+					genFileName,
 					imageWidth,
 					imageHeight,
 					mimeType,
 					exifData,
-					userUuid).
-					Scan(&imageUuid)
+					userUuid)
 				if err != nil {
 					fmt.Printf("Error 1: %s", err.Error())
 					return &ApiTxError{
@@ -324,11 +342,15 @@ VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::uuid) RETURNING uuid`,
 					}
 				}
 				result.Message = "image inserted successfully"
+				fmt.Printf("Insert new pluto ok\n")
 			} else {
-				if err := validateUuid(uuid); err != nil {
+				fmt.Printf("Update pluto image\n")
+
+				err := validateUuid(imageUuid)
+				if err != nil {
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
-						Err:  fmt.Errorf("invalid uuid: %s, %v", uuid, err),
+						Err:  fmt.Errorf("invalid uuid: %s, %v", imageUuid, err),
 					}
 				}
 
@@ -339,19 +361,18 @@ UPDATE %s.pluto_image SET file_name = $2, gen_file_name = $3, width = $4, height
 FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 					`, dbSchema, dbSchema, dbSchema)
 
-				fmt.Println("Update query: ", query)
-				err := tx.QueryRow(
+				err = tx.QueryRow(
 					ctx, query,
-					uuid,
+					imageUuid,
 					originalFileName,
-					generatedFileName,
+					genFileName,
 					imageWidth,
 					imageHeight,
 					mimeType,
 					exifData,
-				).Scan(&previousGenFileName)
+				).Scan(&prevGenFileName)
 				if err != nil {
-					fmt.Printf("Error 2: %s, uuid: %s", err.Error(), uuid)
+					fmt.Printf("Error 2: %s, uuid: %s", err.Error(), imageUuid)
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
 						Err:  fmt.Errorf("failed to update pluto image: %v", err),
@@ -359,6 +380,10 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 				}
 				result.Message = "image updated successfully"
 				deleteCacheImageUuid = imageUuid
+
+				fmt.Printf("genFileName: %s\n", genFileName)
+				fmt.Printf("prevGenFileName: %s\n", prevGenFileName)
+				fmt.Printf("Update pluto ok\n")
 			}
 		}
 
@@ -375,22 +400,11 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 			deleteCacheImageUuid = imageUuid
 		}
 
-		fmt.Println("prevFocus:", prevFocusX, prevFocusY)
-
 		query = fmt.Sprintf(
 			`UPDATE %s.pluto_image
 			SET alt_text = $1, copyright = $2, creator_name = $3, license = $4, description = $5, focus_x = $6, focus_y = $7
 			WHERE uuid = $8`,
 			dbSchema)
-		fmt.Println("query:", query)
-		fmt.Println("altText:", altText)
-		fmt.Println("copyright:", copyright)
-		fmt.Println("creatorName:", creatorName)
-		fmt.Println("license:", license)
-		fmt.Println("description:", description)
-		fmt.Println("focusX:", focusX)
-		fmt.Println("focusY:", focusY)
-		fmt.Println("imageUuid:", imageUuid)
 
 		// Update pluto_image
 		_, err = tx.Exec(
@@ -411,21 +425,15 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 			}
 		}
 
-		// Update pluto_image_link
+		// Insert/update pluto_image_link
 		query = fmt.Sprintf(
 			`INSERT INTO %s.pluto_image_link
 				(pluto_image_uuid, context, context_uuid, identifier)
 			VALUES ($1::uuid, $2, $3::uuid, $4)
 			ON CONFLICT (context, context_uuid, identifier)
 			DO UPDATE SET
-				pluto_image_uuid = EXCLUDED.pluto_image_uuid
-				`,
+				pluto_image_uuid = EXCLUDED.pluto_image_uuid`,
 			PlutoInstance.DbSchema)
-		fmt.Println("query:", query)
-		fmt.Println("imageUuid:", imageUuid)
-		fmt.Println("context:", context)
-		fmt.Println("contextUuid:", contextUuid)
-		fmt.Println("identifier:", identifier)
 
 		_, err = tx.Exec(
 			ctx,
@@ -462,10 +470,8 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 		return result, txErr.Err
 	}
 
-	fmt.Println("cleanup")
-
 	// Filesystem cleanup (post-commit)
-	cleanup, err := CleanupPlutoImageFiles(deleteCacheImageUuid, previousGenFileName)
+	cleanup, err := CleanupPlutoImageFiles(deleteCacheImageUuid, "")
 	if err == nil {
 		result.CacheFilesRemoved = cleanup.CacheFilesRemoved
 		result.FileRemovedFlag = cleanup.ImageFileRemoved
@@ -473,8 +479,6 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 
 	result.HttpStatus = http.StatusOK
 	result.ImageUuid = imageUuid
-
-	fmt.Println("imageUuid", imageUuid)
 
 	return result, nil
 }
