@@ -12,10 +12,10 @@ import (
 
 // API: GET /image/:context/:contextId/:identifier/meta
 func getImageMeta(gc *gin.Context) {
+	apiRequest := grains_api.NewRequest(gc, "get-pluto-image-meta")
 	ctx := gc.Request.Context()
 	dbPool := PlutoInstance.DbPool
 	dbSchema := PlutoInstance.DbSchema
-	apiRequest := grains_api.NewRequest(gc, "get-pluto-image-meta")
 
 	context := gc.Param("context")
 	if context == "" {
@@ -23,9 +23,9 @@ func getImageMeta(gc *gin.Context) {
 		return
 	}
 
-	contextId, ok := ParamInt(gc, "contextId")
-	if !ok {
-		apiRequest.Error(http.StatusBadRequest, "contextId is required")
+	contextUuid := gc.Param("contextUuid")
+	if contextUuid == "" {
+		apiRequest.Error(http.StatusBadRequest, "contextUuid is required")
 		return
 	}
 
@@ -37,7 +37,7 @@ func getImageMeta(gc *gin.Context) {
 
 	query := fmt.Sprintf(`
         SELECT
-            pi.id, 
+            pi.uuid, 
             pi.file_name, 
             pi.width, 
             pi.height, 
@@ -50,19 +50,15 @@ func getImageMeta(gc *gin.Context) {
             pi.creator_name, 
             pi.copyright,
             pi.focus_x, 
-            pi.focus_y, 
-            pi.margin_left, 
-            pi.margin_right, 
-            pi.margin_top, 
-            pi.margin_bottom
+            pi.focus_y
         FROM %s.pluto_image_link pil
-        LEFT JOIN %s.pluto_image pi ON pi.id = pil.pluto_image_id
-        WHERE pil.context = $1 AND pil.context_id = $2 AND pil.identifier = $3
+        LEFT JOIN %s.pluto_image pi ON pi.uuid = pil.pluto_image_uuid
+        WHERE pil.context = $1 AND pil.context_uuid = $2::uuid AND pil.identifier = $3
     `, dbSchema, dbSchema)
 
 	var meta ImageMeta
-	err := dbPool.QueryRow(ctx, query, context, contextId, identifier).Scan(
-		&meta.Id,
+	err := dbPool.QueryRow(ctx, query, context, contextUuid, identifier).Scan(
+		&meta.Uuid,
 		&meta.FileName,
 		&meta.Width,
 		&meta.Height,
@@ -76,13 +72,9 @@ func getImageMeta(gc *gin.Context) {
 		&meta.Copyright,
 		&meta.FocusX,
 		&meta.FocusY,
-		&meta.MarginLeft,
-		&meta.MarginRight,
-		&meta.MarginTop,
-		&meta.MarginBottom,
 	)
 
-	if meta.Id == nil {
+	if meta.Uuid == nil {
 		apiRequest.Error(http.StatusNotFound, "image not found")
 		return
 	}

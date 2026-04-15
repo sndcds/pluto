@@ -12,7 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/pgxpool"
-	"github.com/sndcds/grains/grains_api"
 )
 
 type Pluto struct {
@@ -35,12 +34,6 @@ func Initialize(configFilePath string, pool *pgxpool.Pool, verbose bool) (*Pluto
 	if err := pluto.loadConfig(configFilePath); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-
-	grains_api.Init(grains_api.Config{
-		ServiceName: "Pluto API",
-		APIVersion:  "1.0",
-		TimeFormat:  "", // Use default
-	})
 
 	pluto.Log("prepare sql")
 	if err := pluto.prepareSql(); err != nil {
@@ -91,8 +84,8 @@ func (pluto *Pluto) prepareSql() error {
 
 func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.HandlerFunc) {
 	group := rg.Group("/" + pluto.Config.PlutoRoute)
-	group.GET("/:id/", getImage)
+	group.GET("/:uuid/", getImage)
 	group.GET("/file/:file", getFile)
-	group.GET("/meta/:context/:contextId/:identifier", getImageMeta)
-	group.GET("/cache/:imageId", getImageCache)
+	group.GET("/meta/:context/:contextUuid/:identifier", getImageMeta)
+	group.GET("/cache/:imageUuid", getImageCache)
 }

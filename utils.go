@@ -2,8 +2,8 @@ package pluto
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -69,49 +69,15 @@ func GetQueryBoolDefault(gc *gin.Context, key string, def bool) (bool, bool) {
 	return val, true
 }
 
-// GenerateImageFilename returns a securely generated random filename
-// that preserves the original file's extension.
-//
-// It creates a 128-bit (16-byte) cryptographically secure random identifier,
-// encodes it as a 32-character hexadecimal string, and appends the original
-// file extension (e.g. ".jpg", ".png") from the input filename.
-//
-// This function is suitable for generating unique, unpredictable image
-// filenames for uploaded files.
-//
-// Example:
-//
-//	"cat.jpg" => "f3ab7c54c8a44f01bd1182d4a57c121a.jpg"
-//
-// Parameters:
-//
-//	originalName - the original filename, from which the extension will be preserved.
-//
-// Returns:
-//   - A string containing the generated filename (randomHex + original extension).
-//   - An error if the secure random number generation fails.
-func GenerateImageFilename(originalName string) (string, error) {
-	bytes := make([]byte, 16) // Generate 16 random bytes (128 bits)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-
-	randomHex := hex.EncodeToString(bytes)          // Convert to hex string
-	ext := filepath.Ext(originalName)               // Extract original extension
-	filename := fmt.Sprintf("%s%s", randomHex, ext) // Combine hex ID with original extension
-
-	return filename, nil
-}
-
 func ParseAspectRatio(s string) (float32, error) {
 	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
-		return 0, fmt.Errorf("invalid ratio")
+		return 0, errors.New("invalid ratio")
 	}
 	w, err1 := strconv.ParseFloat(parts[0], 64)
 	h, err2 := strconv.ParseFloat(parts[1], 64)
 	if err1 != nil || err2 != nil || h == 0 {
-		return 0, fmt.Errorf("invalid ratio")
+		return 0, errors.New("invalid ratio")
 	}
 	return float32(w) / float32(h), nil
 }
@@ -319,7 +285,7 @@ func EncodeFloat32ForPath(f float32) string {
 func DecodeFloat32FromPath(s string) (float32, error) {
 	b, err := hex.DecodeString(s)
 	if err != nil || len(b) != 4 {
-		return 0, fmt.Errorf("invalid hex float string")
+		return 0, errors.New("invalid hex float string")
 	}
 	bits := uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 	return math.Float32frombits(bits), nil
@@ -330,22 +296,19 @@ type ImageCleanupResult struct {
 	ImageFileRemoved  bool
 }
 
-func CleanupPlutoImageFiles(
-	imageId int,
-	fileName *string,
-) (*ImageCleanupResult, error) {
+func CleanupPlutoImageFiles(imageUuid string, fileName string) (*ImageCleanupResult, error) {
 	result := &ImageCleanupResult{}
 
 	// Always clean cache (safe even if image doesn't exist)
-	cacheFilesRemoved, err := CleanupPlutoCache(imageId)
+	cacheFilesRemoved, err := CleanupPlutoCache(imageUuid)
 	if err != nil {
 		return result, err
 	}
 	result.CacheFilesRemoved = cacheFilesRemoved
 
 	// Only clean image file if we actually have a filename
-	if fileName != nil && *fileName != "" {
-		imageFileRemoved, err := CleanupPlutoImage(*fileName)
+	if fileName != "" {
+		imageFileRemoved, err := CleanupPlutoImage(fileName)
 		if err != nil {
 			return result, err
 		}
@@ -367,8 +330,8 @@ func CleanupPlutoImage(imageFileName string) (bool, error) {
 }
 
 // Delete cache files
-func CleanupPlutoCache(imageId int) (int, error) {
-	prefix := fmt.Sprintf("%x_", imageId)
+func CleanupPlutoCache(imageUuid string) (int, error) {
+	prefix := fmt.Sprintf("%s_", imageUuid)
 	cacheFilesRemoved, err := DeleteFilesWithPrefix(PlutoInstance.Config.PlutoCacheDir, prefix)
 	if err != nil {
 		return 0, err
@@ -380,7 +343,7 @@ func CleanupPlutoCache(imageId int) (int, error) {
 // Returns the number of deleted files and an error (if any).
 func DeleteFilesWithPrefix(dir string, prefix string) (int, error) {
 	if len(prefix) < 1 {
-		return 0, fmt.Errorf("prefix required")
+		return 0, errors.New("prefix required")
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -407,7 +370,7 @@ func DeleteFilesWithPrefix(dir string, prefix string) (int, error) {
 // Returns an error if the file cannot be deleted.
 func RemoveFile(path string) error {
 	if path == "" {
-		return fmt.Errorf("file path required")
+		return errors.New("file path required")
 	}
 
 	// Check if file exists first (optional)
@@ -426,16 +389,16 @@ func RemoveFile(path string) error {
 func GetImageFocusTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	imageID int,
+	imageUuid string,
 ) (focusX *float64, focusY *float64, err error) {
 
 	query := fmt.Sprintf(
-		`SELECT focus_x, focus_y FROM %s.pluto_image WHERE id = $1`,
+		`SELECT focus_x, focus_y FROM %s.pluto_image WHERE uuid = $1::uuid`,
 		PlutoInstance.DbSchema,
 	)
 
 	var fx, fy *float64
-	err = tx.QueryRow(ctx, query, imageID).Scan(&fx, &fy)
+	err = tx.QueryRow(ctx, query, imageUuid).Scan(&fx, &fy)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -447,19 +410,19 @@ func GetImageFocusTx(
 func DeleteImageTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	imageId int,
+	imageUuid string,
 ) (deletedFileName string, cacheRows int64, err error) {
 	schema := PlutoInstance.DbSchema
 
 	// Delete cache rows
-	cacheRowsAffected, err := DeleteCacheTx(ctx, tx, imageId)
+	cacheRowsAffected, err := DeleteCacheTx(ctx, tx, imageUuid)
 	if err != nil {
 		return "", 0, err
 	}
 
 	// Delete image row
-	imageQuery := fmt.Sprintf(`DELETE FROM %s.pluto_image WHERE id = $1 RETURNING gen_file_name`, schema)
-	err = tx.QueryRow(ctx, imageQuery, imageId).Scan(&deletedFileName)
+	imageQuery := fmt.Sprintf(`DELETE FROM %s.pluto_image WHERE uuid = $1::uuid RETURNING gen_file_name`, schema)
+	err = tx.QueryRow(ctx, imageQuery, imageUuid).Scan(&deletedFileName)
 	if err != nil {
 		return "", cacheRowsAffected, err
 	}
@@ -471,12 +434,12 @@ func DeleteImageTx(
 func DeleteCacheTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	imageID int,
+	imageUuid string,
 ) (deletedFilesCount int64, err error) {
 	schema := PlutoInstance.DbSchema
 
-	cacheQuery := fmt.Sprintf(`DELETE FROM %s.pluto_cache WHERE image_id = $1`, schema)
-	cmdTag, err := tx.Exec(ctx, cacheQuery, imageID)
+	cacheQuery := fmt.Sprintf(`DELETE FROM %s.pluto_cache WHERE pluto_image_uuid = $1::uuid`, schema)
+	cmdTag, err := tx.Exec(ctx, cacheQuery, imageUuid)
 	if err != nil {
 		return 0, err
 	}
