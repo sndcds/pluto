@@ -13,10 +13,12 @@ import (
 
 	"github.com/chai2010/webp"
 	"github.com/disintegration/imaging"
+	"github.com/gen2brain/avif"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/rwcarlsen/goexif/exif"
+	"github.com/sndcds/grains/grains_file"
 	"github.com/sndcds/grains/grains_uuid"
 )
 
@@ -65,7 +67,7 @@ func UpsertImage(
 		return result, errors.New("invalid payload")
 	}
 
-	altText := &meta.Alt
+	altText := &meta.AltText
 	copyright := &meta.Copyright
 	creatorName := &meta.Creator
 	description := &meta.Description
@@ -138,13 +140,8 @@ func UpsertImage(
 			}
 		}
 
-		fmt.Println("insertImageFlag", insertImageFlag)
-
 		file, err := gc.FormFile("file")
 		if file != nil {
-
-			fmt.Println("upload file with size", file.Size)
-
 			// Check file size
 			if file.Size > maxUploadSize {
 				return &ApiTxError{
@@ -155,13 +152,10 @@ func UpsertImage(
 						float64(file.Size)/(1<<20))}
 			}
 
-			fmt.Println("read file into buffer")
-
 			// Read file into buffer for multiple uses
 			buf := new(bytes.Buffer)
 			src, err := file.Open()
 			if err != nil {
-				fmt.Printf("Error: %s", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
 					Err:  errors.New("failed to open uploaded file"),
@@ -170,7 +164,6 @@ func UpsertImage(
 			defer src.Close()
 
 			if _, err := io.Copy(buf, src); err != nil {
-				fmt.Printf("Error: %s", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
 					Err:  errors.New("failed to read uploaded file"),
@@ -183,8 +176,10 @@ func UpsertImage(
 				head = head[:512]
 			}
 			mimeType := http.DetectContentType(head)
+			isAVIF := grains_file.IsAVIF(head)
 
-			fmt.Println("mimeType", mimeType)
+			fmt.Printf("mimeType: %s\n", mimeType)
+			fmt.Printf("isAVIF: %t\n", isAVIF)
 
 			// Decode EXIF metadata if present
 			exifData := make(map[string]string)
@@ -193,10 +188,17 @@ func UpsertImage(
 				x.Walk(&exifWalker{m: exifData})
 			}
 
-			fmt.Println("exifData", exifData)
+			var img image.Image
+			switch {
+			case isAVIF:
+				img, err = avif.Decode(bytes.NewReader(buf.Bytes()))
+				mimeType = "image/webp"
+			case mimeType == "image/webp":
+				img, err = webp.Decode(bytes.NewReader(buf.Bytes()))
+			default:
+				img, _, err = image.Decode(bytes.NewReader(buf.Bytes()))
+			}
 
-			// Decode full image (needed for resizing)
-			img, _, err := image.Decode(bytes.NewReader(buf.Bytes()))
 			if err != nil {
 				return &ApiTxError{
 					Code: http.StatusBadRequest,
@@ -207,80 +209,62 @@ func UpsertImage(
 			imageWidth := img.Bounds().Dx()
 			imageHeight := img.Bounds().Dy()
 
-			fmt.Println("imageWidth", imageWidth)
-			fmt.Println("imageHeight", imageHeight)
-
 			// Downscale if needed
 			if imageWidth > maxWidth || imageHeight > maxHeight {
 				img = imaging.Fit(img, maxWidth, maxHeight, imaging.Lanczos)
+			}
+			// Encode back into buffer (overwrite original!)
+			buf.Reset()
 
-				fmt.Println("downscale")
-
-				// Encode back into buffer (overwrite original!)
-				buf.Reset()
-
-				switch mimeType {
-				case "image/png":
-					err = imaging.Encode(buf, img, imaging.PNG)
-
-				case "image/jpeg":
-					err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(compressionQuality))
-
-				case "image/webp":
-					err = webp.Encode(buf, img, &webp.Options{
-						Quality: float32(compressionQuality),
-					})
-
-				default:
-					return &ApiTxError{
-						Code: http.StatusInternalServerError,
-						Err:  errors.New("failed to encode resized image: unknown mime type"),
-					}
+			var fileExt string
+			switch mimeType {
+			case "image/png":
+				err = imaging.Encode(buf, img, imaging.PNG)
+				fileExt = ".png"
+			case "image/jpeg":
+				err = imaging.Encode(buf, img, imaging.JPEG, imaging.JPEGQuality(compressionQuality))
+				fileExt = ".jpg"
+			case "image/webp":
+				fmt.Printf("eoncode as webp\n")
+				err = webp.Encode(buf, img, &webp.Options{
+					Quality: float32(compressionQuality),
+				})
+				fileExt = ".webp"
+			default:
+				return &ApiTxError{
+					Code: http.StatusInternalServerError,
+					Err:  errors.New("unsupported image format"),
 				}
-
-				if err != nil {
-					fmt.Printf("Error: %s", err.Error())
-					return &ApiTxError{
-						Code: http.StatusInternalServerError,
-						Err:  fmt.Errorf("failed to encode resized image: %v", err),
-					}
-				}
-
-				// Update dimensions after resize
-				imageWidth = img.Bounds().Dx()
-				imageHeight = img.Bounds().Dy()
-
-				fmt.Println("downscaled imageWidth", imageWidth)
-				fmt.Println("downscaled imageHeight", imageHeight)
 			}
 
-			// Generate uuid if neccessary
-			fmt.Println("existing imageUuid", imageUuid)
+			fmt.Printf("fileExt: %s\n", fileExt)
 
+			if err != nil {
+				return &ApiTxError{
+					Code: http.StatusInternalServerError,
+					Err:  errors.New("image encoding failed"),
+				}
+			}
+
+			imageWidth = img.Bounds().Dx()
+			imageHeight = img.Bounds().Dy()
+
+			// Generate uuid if neccessary
 			if imageUuid == "" {
 				imageUuid, err = grains_uuid.Uuidv7String()
 				if err != nil {
-					fmt.Printf("Error: %s", err.Error())
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
 						Err:  errors.New("failed to generate uuid"),
 					}
 				}
-				fmt.Println("generated imageUuid", imageUuid)
 			}
 
 			// Sanitize and generate filename
 			originalFileName := filepath.Base(file.Filename)
-			fileExt := filepath.Ext(originalFileName)
 			genFileName = fmt.Sprintf("%s%s", imageUuid, fileExt)
 
-			fmt.Printf("uuid: %s\n", imageUuid)
-			fmt.Printf("originalFileName: %s\n", originalFileName)
-			fmt.Printf("fileExt: %s\n", fileExt)
-			fmt.Printf("genFileName: %s\n", genFileName)
-
 			if err != nil {
-				fmt.Printf("Error: %s", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
 					Err:  fmt.Errorf("failed to generate filename: %v", err),
@@ -290,7 +274,6 @@ func UpsertImage(
 			// Ensure upload directory exists
 			imageDir := PlutoInstance.Config.PlutoImageDir
 			if err := os.MkdirAll(imageDir, os.ModePerm); err != nil {
-				fmt.Printf("Error: %s", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
 					Err:  fmt.Errorf("failed to create directory: %v", err),
@@ -299,29 +282,22 @@ func UpsertImage(
 
 			if fileNamePrefix != nil {
 				genFileName = fmt.Sprintf("%s_%s", *fileNamePrefix, genFileName)
-				fmt.Printf("genFileName with prefix: %s\n", genFileName)
 			}
 
 			savePath := filepath.Join(imageDir, genFileName)
-			fmt.Printf("savePath: %s\n", savePath)
 			err = os.WriteFile(savePath, buf.Bytes(), 0644)
 			if err != nil {
-				fmt.Printf("Error: %s", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
 					Err:  fmt.Errorf("failed to save file: %v", err),
 				}
 			}
 
-			fmt.Printf("insertImageFlag: %t\n", insertImageFlag)
-
 			if insertImageFlag {
-				fmt.Printf("Insert new pluto image\n")
-
 				// Insert new pluto image
 				query := fmt.Sprintf(`
-INSERT INTO %s.pluto_image (uuid, file_name, gen_file_name, width, height, mime_type, exif, created_by)
-VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::uuid) RETURNING uuid`,
+					INSERT INTO %s.pluto_image (uuid, file_name, gen_file_name, width, height, mime_type, exif, created_by)
+					VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::uuid) RETURNING uuid`,
 					dbSchema)
 
 				_, err = tx.Exec(
@@ -335,17 +311,13 @@ VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::uuid) RETURNING uuid`,
 					exifData,
 					userUuid)
 				if err != nil {
-					fmt.Printf("Error 1: %s", err.Error())
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
 						Err:  fmt.Errorf("failed to insert pluto image: %v", err),
 					}
 				}
 				result.Message = "image inserted successfully"
-				fmt.Printf("Insert new pluto ok\n")
 			} else {
-				fmt.Printf("Update pluto image\n")
-
 				err := validateUuid(imageUuid)
 				if err != nil {
 					return &ApiTxError{
@@ -372,7 +344,6 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 					exifData,
 				).Scan(&prevGenFileName)
 				if err != nil {
-					fmt.Printf("Error 2: %s, uuid: %s", err.Error(), imageUuid)
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
 						Err:  fmt.Errorf("failed to update pluto image: %v", err),
@@ -380,17 +351,12 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 				}
 				result.Message = "image updated successfully"
 				deleteCacheImageUuid = imageUuid
-
-				fmt.Printf("genFileName: %s\n", genFileName)
-				fmt.Printf("prevGenFileName: %s\n", prevGenFileName)
-				fmt.Printf("Update pluto ok\n")
 			}
 		}
 
 		// Check if cached images must be removed, if focus point changes
 		prevFocusX, prevFocusY, err := GetImageFocusTx(ctx, tx, imageUuid)
 		if err != nil {
-			fmt.Printf("Error: %s", err.Error())
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
 				Err:  fmt.Errorf("get focus failed: %v", err),
@@ -418,7 +384,6 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 			focusY,
 			imageUuid)
 		if err != nil {
-			fmt.Printf("Error: %s", err.Error())
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
 				Err:  fmt.Errorf("update pluto_image failed: %v", err),
@@ -444,7 +409,6 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 			identifier,
 		)
 		if err != nil {
-			fmt.Printf("Error: %s", err.Error())
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
 				Err:  fmt.Errorf("update pluto_image_link failed: %v", err),
@@ -454,7 +418,6 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 		// Call the callback inside the transaction
 		if postCallback != nil {
 			if err := postCallback(ctx, tx); err != nil {
-				fmt.Printf("Error: %s", err.Error())
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
 					Err:  fmt.Errorf("post callback function failed: %v", err),

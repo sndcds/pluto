@@ -12,7 +12,7 @@ type ImageMeta struct {
 	Width       *int           `json:"width,omitempty"`
 	Height      *int           `json:"height,omitempty"`
 	MimeType    *string        `json:"mime_type,omitempty"`
-	Alt         *string        `json:"alt_text,omitempty"`
+	AltText     *string        `json:"alt_text,omitempty"`
 	Description *string        `json:"description,omitempty"`
 	License     *string        `json:"license,omitempty"`
 	Exif        map[string]any `json:"exif,omitempty"`
