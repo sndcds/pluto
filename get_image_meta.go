@@ -63,7 +63,7 @@ func getImageMeta(gc *gin.Context) {
 		&meta.Width,
 		&meta.Height,
 		&meta.MimeType,
-		&meta.Alt,
+		&meta.AltText,
 		&meta.Description,
 		&meta.License,
 		&meta.Exif,
