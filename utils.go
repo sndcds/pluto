@@ -72,12 +72,12 @@ func GetQueryBoolDefault(gc *gin.Context, key string, def bool) (bool, bool) {
 func ParseAspectRatio(s string) (float32, error) {
 	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
-		return 0, errors.New("invalid ratio")
+		return 0, errors.New("Invalid ratio")
 	}
 	w, err1 := strconv.ParseFloat(parts[0], 64)
 	h, err2 := strconv.ParseFloat(parts[1], 64)
 	if err1 != nil || err2 != nil || h == 0 {
-		return 0, errors.New("invalid ratio")
+		return 0, errors.New("Invalid ratio")
 	}
 	return float32(w) / float32(h), nil
 }
@@ -285,7 +285,7 @@ func EncodeFloat32ForPath(f float32) string {
 func DecodeFloat32FromPath(s string) (float32, error) {
 	b, err := hex.DecodeString(s)
 	if err != nil || len(b) != 4 {
-		return 0, errors.New("invalid hex float string")
+		return 0, errors.New("Invalid hex float string")
 	}
 	bits := uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 	return math.Float32frombits(bits), nil
@@ -343,11 +343,11 @@ func CleanupPlutoCache(imageUuid string) (int, error) {
 // Returns the number of deleted files and an error (if any).
 func DeleteFilesWithPrefix(dir string, prefix string) (int, error) {
 	if len(prefix) < 1 {
-		return 0, errors.New("prefix required")
+		return 0, errors.New("Prefix required")
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read directory: %w", err)
+		return 0, fmt.Errorf("Failed to read directory: %w", err)
 	}
 	deletedCount := 0
 	for _, entry := range entries {
@@ -358,7 +358,7 @@ func DeleteFilesWithPrefix(dir string, prefix string) (int, error) {
 		if strings.HasPrefix(name, prefix) {
 			fullPath := filepath.Join(dir, name)
 			if err := os.Remove(fullPath); err != nil {
-				return deletedCount, fmt.Errorf("failed to delete %s: %w", fullPath, err)
+				return deletedCount, fmt.Errorf("Failed to delete %s: %w", fullPath, err)
 			}
 			deletedCount++
 		}
@@ -370,16 +370,16 @@ func DeleteFilesWithPrefix(dir string, prefix string) (int, error) {
 // Returns an error if the file cannot be deleted.
 func RemoveFile(path string) error {
 	if path == "" {
-		return errors.New("file path required")
+		return errors.New("File path required")
 	}
 
 	// Check if file exists first (optional)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return fmt.Errorf("file does not exist: %s", path)
+		return fmt.Errorf("File does not exist: %s", path)
 	}
 
 	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("failed to delete file %s: %w", path, err)
+		return fmt.Errorf("Failed to delete file %s: %w", path, err)
 	}
 
 	return nil

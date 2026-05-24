@@ -56,7 +56,7 @@ func UpsertImage(
 	if payloadStr == "" {
 		result.HttpStatus = http.StatusBadRequest
 		result.Message = "payload field is required"
-		return result, errors.New("payload field is required")
+		return result, errors.New("Payload field is required")
 	}
 
 	// Unmarshal JSON into struct
@@ -64,7 +64,7 @@ func UpsertImage(
 	if err := json.Unmarshal([]byte(payloadStr), &meta); err != nil {
 		result.HttpStatus = http.StatusBadRequest
 		result.Message = "invalid payload"
-		return result, errors.New("invalid payload")
+		return result, errors.New("Invalid payload")
 	}
 
 	altText := &meta.AltText
@@ -100,7 +100,7 @@ func UpsertImage(
 			} else {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  errors.New("failed to get pluto context rule"),
+					Err:  errors.New("Failed to get pluto context rule"),
 				}
 			}
 		}
@@ -145,9 +145,9 @@ func UpsertImage(
 			// Check file size
 			if file.Size > maxUploadSize {
 				return &ApiTxError{
-					Code: http.StatusBadRequest,
+					Code: http.StatusRequestEntityTooLarge,
 					Err: fmt.Errorf(
-						"file too large, max size %.2f MB, file has %.2f MB",
+						"File too large, max size %.2f MB, file has %.2f MB",
 						float64(maxUploadSize)/(1<<20),
 						float64(file.Size)/(1<<20))}
 			}
@@ -158,7 +158,7 @@ func UpsertImage(
 			if err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  errors.New("failed to open uploaded file"),
+					Err:  errors.New("Failed to open uploaded file"),
 				}
 			}
 			defer src.Close()
@@ -166,7 +166,7 @@ func UpsertImage(
 			if _, err := io.Copy(buf, src); err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  errors.New("failed to read uploaded file"),
+					Err:  errors.New("Failed to read uploaded file"),
 				}
 			}
 
@@ -202,7 +202,7 @@ func UpsertImage(
 			if err != nil {
 				return &ApiTxError{
 					Code: http.StatusBadRequest,
-					Err:  errors.New("invalid image"),
+					Err:  errors.New("Invalid image"),
 				}
 			}
 
@@ -233,7 +233,7 @@ func UpsertImage(
 			default:
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  errors.New("unsupported image format"),
+					Err:  errors.New("Unsupported image format"),
 				}
 			}
 
@@ -242,7 +242,7 @@ func UpsertImage(
 			if err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  errors.New("image encoding failed"),
+					Err:  errors.New("Image encoding failed"),
 				}
 			}
 
@@ -255,7 +255,7 @@ func UpsertImage(
 				if err != nil {
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
-						Err:  errors.New("failed to generate uuid"),
+						Err:  errors.New("Failed to generate uuid"),
 					}
 				}
 			}
@@ -267,7 +267,7 @@ func UpsertImage(
 			if err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("failed to generate filename: %v", err),
+					Err:  fmt.Errorf("Failed to generate filename: %v", err),
 				}
 			}
 
@@ -276,7 +276,7 @@ func UpsertImage(
 			if err := os.MkdirAll(imageDir, os.ModePerm); err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("failed to create directory: %v", err),
+					Err:  fmt.Errorf("Failed to create directory: %v", err),
 				}
 			}
 
@@ -289,7 +289,7 @@ func UpsertImage(
 			if err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("failed to save file: %v", err),
+					Err:  fmt.Errorf("Failed to save file: %v", err),
 				}
 			}
 
@@ -313,16 +313,16 @@ func UpsertImage(
 				if err != nil {
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
-						Err:  fmt.Errorf("failed to insert pluto image: %v", err),
+						Err:  fmt.Errorf("Failed to insert pluto image: %v", err),
 					}
 				}
-				result.Message = "image inserted successfully"
+				result.Message = "Image inserted successfully"
 			} else {
 				err := validateUuid(imageUuid)
 				if err != nil {
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
-						Err:  fmt.Errorf("invalid uuid: %s, %v", imageUuid, err),
+						Err:  fmt.Errorf("Invalid uuid: %s, %v", imageUuid, err),
 					}
 				}
 
@@ -346,7 +346,7 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 				if err != nil {
 					return &ApiTxError{
 						Code: http.StatusInternalServerError,
-						Err:  fmt.Errorf("failed to update pluto image: %v", err),
+						Err:  fmt.Errorf("Failed to update pluto image: %v", err),
 					}
 				}
 				result.Message = "image updated successfully"
@@ -359,7 +359,7 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 		if err != nil {
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("get focus failed: %v", err),
+				Err:  fmt.Errorf("Get focus failed: %v", err),
 			}
 		}
 		if !FloatPtrEqual(focusX, prevFocusX) || !FloatPtrEqual(focusY, prevFocusY) {
@@ -386,7 +386,7 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 		if err != nil {
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("update pluto_image failed: %v", err),
+				Err:  fmt.Errorf("Update pluto_image failed: %v", err),
 			}
 		}
 
@@ -411,7 +411,7 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 		if err != nil {
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("update pluto_image_link failed: %v", err),
+				Err:  fmt.Errorf("Update pluto_image_link failed: %v", err),
 			}
 		}
 
@@ -420,7 +420,7 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 			if err := postCallback(ctx, tx); err != nil {
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("post callback function failed: %v", err),
+					Err:  fmt.Errorf("Post callback function failed: %v", err),
 				}
 			}
 		}
@@ -448,7 +448,7 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 
 func validateUuid(u string) error {
 	if _, err := uuid.Parse(u); err != nil {
-		return fmt.Errorf("invalid UUID: %s", u)
+		return fmt.Errorf("Invalid UUID: %s", u)
 	}
 	return nil
 }

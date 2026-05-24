@@ -1,6 +1,7 @@
 package pluto
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
@@ -46,17 +47,13 @@ func DefaultConfig() Config {
 }
 
 func (config Config) Print() {
-	fmt.Println("pluto Config")
-	fmt.Printf("  base_api_url: %s\n", config.BaseApiUrl)
-	fmt.Printf("  db_host: %s\n", config.DbHost)
-	fmt.Printf("  db_port: %d\n", config.DbPort)
-	fmt.Printf("  db_user: %s\n", config.DbUser)
-	fmt.Printf("  db_name: %s\n", config.DbName)
-	fmt.Printf("  db_schema: %s\n", config.DbSchema)
-	fmt.Printf("  ssl_mode: %s\n", config.SSLMode)
-	fmt.Printf("  pluto_verbose: %t\n", config.PlutoVerbose)
-	fmt.Printf("  pluto_route: %s\n", config.PlutoRoute)
-	fmt.Printf("  pluto_image_dir: %s\n", config.PlutoImageDir)
-	fmt.Printf("  pluto_cache_dir: %s\n", config.PlutoCacheDir)
-	fmt.Printf("  pluto_default_image_type: %s\n", config.PlutoDefaultImageType)
+	fmt.Println("Pluto Config")
+
+	b, err := json.MarshalIndent(config, "  ", "  ")
+	if err != nil {
+		fmt.Println("  Error printing config:", err)
+		return
+	}
+
+	fmt.Println(string(b))
 }

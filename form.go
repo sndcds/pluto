@@ -28,7 +28,7 @@ func getPostFormFloatPtr(gc *gin.Context, key string) (*float64, error) {
 	val = strings.ReplaceAll(val, ",", ".")
 	f, err := strconv.ParseFloat(val, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid %s: %q", key, gc.PostForm(key))
+		return nil, fmt.Errorf("Invalid %s: %q", key, gc.PostForm(key))
 	}
 	return &f, nil
 }
@@ -40,7 +40,7 @@ func getPostFormIntPtr(gc *gin.Context, field string) (*int, error) {
 	}
 	val, err := strconv.Atoi(valStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid %s: %v", field, err)
+		return nil, fmt.Errorf("Invalid %s: %v", field, err)
 	}
 	if val == 0 {
 		return nil, nil // treat 0 as "not set"
