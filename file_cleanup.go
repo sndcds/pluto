@@ -16,7 +16,7 @@ func CleanupImages(ctx context.Context) error {
 	query := fmt.Sprintf("SELECT gen_file_name FROM %s.pluto_image", schema)
 	rows, err := db.Query(ctx, query)
 	if err != nil {
-		return fmt.Errorf("query failed: %w", err)
+		return fmt.Errorf("Query failed: %w", err)
 	}
 	defer rows.Close()
 
@@ -52,7 +52,7 @@ func CleanupImages(ctx context.Context) error {
 			fmt.Printf("Deleting: %s\n", path)
 			deleteCount++
 			if err := os.Remove(path); err != nil {
-				return fmt.Errorf("failed to delete %s: %w", path, err)
+				return fmt.Errorf("Failed to delete %s: %w", path, err)
 			}
 		}
 

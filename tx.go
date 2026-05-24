@@ -23,7 +23,7 @@ func (e *ApiTxError) Error() string {
 func WithTransaction(ctx context.Context, db *pgxpool.Pool, fn func(tx pgx.Tx) *ApiTxError) *ApiTxError {
 	tx, err := db.Begin(ctx)
 	if err != nil {
-		return &ApiTxError{Code: http.StatusInternalServerError, Err: fmt.Errorf("failed to start transaction: %w", err)}
+		return &ApiTxError{Code: http.StatusInternalServerError, Err: fmt.Errorf("Failed to start transaction: %w", err)}
 	}
 
 	defer func() {
@@ -36,7 +36,7 @@ func WithTransaction(ctx context.Context, db *pgxpool.Pool, fn func(tx pgx.Tx) *
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return &ApiTxError{Code: http.StatusInternalServerError, Err: fmt.Errorf("failed to commit transaction: %w", err)}
+		return &ApiTxError{Code: http.StatusInternalServerError, Err: fmt.Errorf("Failed to commit transaction: %w", err)}
 	}
 
 	return nil

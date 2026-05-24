@@ -32,12 +32,12 @@ func Initialize(configFilePath string, pool *pgxpool.Pool, verbose bool) (*Pluto
 
 	pluto.Log("loading configuration")
 	if err := pluto.loadConfig(configFilePath); err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, fmt.Errorf("Failed to load config: %w", err)
 	}
 
 	pluto.Log("prepare sql")
 	if err := pluto.prepareSql(); err != nil {
-		return nil, fmt.Errorf("failed to prepare SQL: %w", err)
+		return nil, fmt.Errorf("Failed to prepare SQL: %w", err)
 	}
 
 	pluto.DbSchema = pluto.Config.DbSchema

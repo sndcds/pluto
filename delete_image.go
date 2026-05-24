@@ -53,7 +53,7 @@ func DeleteImage(
 			}
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("failed to get image for deletion: %v", err),
+				Err:  fmt.Errorf("Failed to get image for deletion: %v", err),
 			}
 		}
 
@@ -68,7 +68,7 @@ func DeleteImage(
 			fmt.Print("Error 2: %v\n", err)
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("failed to delete pluto_image_link: %v", err),
+				Err:  fmt.Errorf("Failed to delete pluto_image_link: %v", err),
 			}
 		}
 
@@ -83,7 +83,7 @@ func DeleteImage(
 			fmt.Print("Error 3: %v\n", err)
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("failed to count image links: %v", err),
+				Err:  fmt.Errorf("Failed to count image links: %v", err),
 			}
 		}
 
@@ -94,7 +94,7 @@ func DeleteImage(
 				fmt.Print("Error 4: %v\n", err)
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("failed to delete pluto_image: %v", err),
+					Err:  fmt.Errorf("Failed to delete pluto_image: %v", err),
 				}
 			}
 		}
@@ -104,7 +104,7 @@ func DeleteImage(
 			fmt.Print("Error 5: %v\n", err)
 			return &ApiTxError{
 				Code: http.StatusInternalServerError,
-				Err:  fmt.Errorf("failed to delete cached files: %v", err),
+				Err:  fmt.Errorf("Failed to delete cached files: %v", err),
 			}
 		}
 
@@ -114,7 +114,7 @@ func DeleteImage(
 				fmt.Print("Error 6: %v\n", err)
 				return &ApiTxError{
 					Code: http.StatusInternalServerError,
-					Err:  fmt.Errorf("post callback function failed: %v", err),
+					Err:  fmt.Errorf("Post callback function failed: %v", err),
 				}
 			}
 		}
