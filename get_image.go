@@ -193,20 +193,20 @@ func getImage(gc *gin.Context) {
 		PlutoInstance.DbSchema)
 	err := pool.QueryRow(ctx, sql, imageUuid).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
-		apiRequest.Error(http.StatusBadRequest, "Image not found")
+		apiRequest.Error(http.StatusNoContent, "Image not found")
 		return
 	}
 
 	imgPath := filepath.Join(PlutoInstance.Config.PlutoImageDir, genFileName)
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
-		apiRequest.Error(http.StatusInternalServerError, "Image not found")
+		apiRequest.Error(http.StatusInternalServerError, "Image read error")
 		return
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(fileBytes))
 	if err != nil {
-		apiRequest.Error(http.StatusInternalServerError, "Image not found")
+		apiRequest.Error(http.StatusInternalServerError, "Image decode error")
 		return
 	}
 
