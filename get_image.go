@@ -193,7 +193,7 @@ func getImage(gc *gin.Context) {
 		PlutoInstance.DbSchema)
 	err := pool.QueryRow(ctx, sql, imageUuid).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
 	if err != nil {
-		apiRequest.Error(http.StatusNoContent, "Image not found")
+		apiRequest.Error(http.StatusNotFound, "Image not found")
 		return
 	}
 
