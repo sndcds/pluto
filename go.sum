@@ -77,6 +77,7 @@ github.com/sndcds/grains v0.0.3 h1:6EgmPspqRlplyaVWSfTLlnmGA1ktrRLDMaeR3brbJZI=
 github.com/sndcds/grains v0.0.3/go.mod h1:J21Y/u2htEAXQ6RCi8oskyj5E39eazSAxctUUttzFC8=
 github.com/sndcds/grains v0.0.6 h1:JtmQQ9l7UmPN+N0D+woYh+KYq6ZrAPrJZA6I5ZwYZ4I=
 github.com/sndcds/grains v0.0.6/go.mod h1:3gCy8fcOb7fn7+2HA9nwRT4D/oP1PhG/NSWZ+CSIf0c=
+github.com/sndcds/grains v0.0.8/go.mod h1:3gCy8fcOb7fn7+2HA9nwRT4D/oP1PhG/NSWZ+CSIf0c=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=
