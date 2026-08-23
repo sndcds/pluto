@@ -15,6 +15,7 @@ type ImageMeta struct {
 	AltText     *string        `json:"alt_text,omitempty"`
 	Description *string        `json:"description,omitempty"`
 	License     *string        `json:"license,omitempty"`
+	AiLabel     *string        `json:"ai_label,omitempty"`
 	Exif        map[string]any `json:"exif,omitempty"`
 	Expiration  *string        `json:"expiration_date,omitempty"`
 	Creator     *string        `json:"creator,omitempty"`
