@@ -59,7 +59,6 @@ func UpsertImage(
 		return result, errors.New("Payload field is required")
 	}
 
-	// Unmarshal JSON into struct
 	var meta ImageMeta
 	if err := json.Unmarshal([]byte(payloadStr), &meta); err != nil {
 		result.HttpStatus = http.StatusBadRequest
@@ -74,6 +73,7 @@ func UpsertImage(
 	focusX := meta.FocusX
 	focusY := meta.FocusY
 	license := &meta.License
+	aiLabel := &meta.AiLabel
 
 	imageUuid := ""
 	insertImageFlag := false
@@ -368,8 +368,8 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 
 		query = fmt.Sprintf(
 			`UPDATE %s.pluto_image
-			SET alt_text = $1, copyright = $2, creator_name = $3, license = $4, description = $5, focus_x = $6, focus_y = $7
-			WHERE uuid = $8`,
+			SET alt_text = $1, copyright = $2, creator_name = $3, license = $4, ai_label = $5, description = $6, focus_x = $7, focus_y = $8
+			WHERE uuid = $9`,
 			dbSchema)
 
 		// Update pluto_image
@@ -379,6 +379,7 @@ FROM image WHERE %s.pluto_image.uuid = $1::uuid RETURNING image.gen_file_name
 			copyright,
 			creatorName,
 			license,
+			aiLabel,
 			description,
 			focusX,
 			focusY,
