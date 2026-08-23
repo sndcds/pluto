@@ -66,14 +66,14 @@ func UpsertImage(
 		return result, errors.New("Invalid payload")
 	}
 
-	altText := &meta.AltText
-	copyright := &meta.Copyright
-	creatorName := &meta.Creator
-	description := &meta.Description
+	altText := meta.AltText
+	copyright := meta.Copyright
+	creatorName := meta.Creator
+	description := meta.Description
 	focusX := meta.FocusX
 	focusY := meta.FocusY
-	license := &meta.License
-	aiLabel := &meta.AiLabel
+	license := meta.License
+	aiLabel := meta.AiLabel
 
 	imageUuid := ""
 	insertImageFlag := false
