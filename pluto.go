@@ -87,5 +87,4 @@ func (pluto *Pluto) RegisterRoutes(rg *gin.RouterGroup, middlewares ...gin.Handl
 	group.GET("/:uuid/", getImage)
 	group.GET("/file/:file", getFile)
 	group.GET("/meta/:context/:contextUuid/:identifier", getImageMeta)
-	group.GET("/cache/:imageUuid", getImageCache)
 }
