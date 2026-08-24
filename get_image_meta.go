@@ -13,6 +13,7 @@ import (
 // API: GET /image/:context/:contextId/:identifier/meta
 func getImageMeta(gc *gin.Context) {
 	apiRequest := grains_api.NewRequest(gc, "get-pluto-image-meta")
+
 	ctx := gc.Request.Context()
 	dbPool := PlutoInstance.DbPool
 	dbSchema := PlutoInstance.DbSchema
@@ -36,29 +37,39 @@ func getImageMeta(gc *gin.Context) {
 	}
 
 	query := fmt.Sprintf(`
-        SELECT
-            pi.uuid, 
-            pi.file_name, 
-            pi.width, 
-            pi.height, 
-            pi.mime_type, 
-            pi.alt_text, 
-            pi.description,
-            pi.license,
-            COALESCE(pi.ai_label, 'none') as ai_label,
-            pi.exif, 
-            pi.expiration_date, 
-            pi.creator_name, 
-            pi.copyright,
-            pi.focus_x, 
-            pi.focus_y
-        FROM %s.pluto_image_link pil
-        LEFT JOIN %s.pluto_image pi ON pi.uuid = pil.pluto_image_uuid
-        WHERE pil.context = $1 AND pil.context_uuid = $2::uuid AND pil.identifier = $3
-    `, dbSchema, dbSchema)
+		SELECT
+			pi.uuid,
+			pi.file_name,
+			pi.width,
+			pi.height,
+			pi.mime_type,
+			pi.alt_text,
+			pi.description,
+			pi.license,
+			COALESCE(pi.ai_label, 'none') AS ai_label,
+			pi.exif,
+			pi.expiration_date,
+			pi.creator_name,
+			pi.copyright,
+			pi.focus_x,
+			pi.focus_y
+		FROM %s.pluto_image_link pil
+		LEFT JOIN %s.pluto_image pi
+			ON pi.uuid = pil.pluto_image_uuid
+		WHERE pil.context = $1
+		  AND pil.context_uuid = $2::uuid
+		  AND pil.identifier = $3
+	`, dbSchema, dbSchema)
 
 	var meta ImageMeta
-	err := dbPool.QueryRow(ctx, query, context, contextUuid, identifier).Scan(
+
+	err := dbPool.QueryRow(
+		ctx,
+		query,
+		context,
+		contextUuid,
+		identifier,
+	).Scan(
 		&meta.Uuid,
 		&meta.FileName,
 		&meta.Width,
@@ -76,19 +87,22 @@ func getImageMeta(gc *gin.Context) {
 		&meta.FocusY,
 	)
 
-	if meta.Uuid == nil {
-		apiRequest.Error(http.StatusNotFound, "image not found")
+	// No image slot/link exists.
+	// This is a valid state, so return 200 with no data.
+	if err == pgx.ErrNoRows {
+		apiRequest.Success(http.StatusOK, nil, "")
 		return
 	}
 
+	// Any other database error is a real error.
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			// No image found for this entity + index
-			apiRequest.Error(http.StatusNotFound, "image not found")
-			return
-		}
-
 		apiRequest.DatabaseError()
+		return
+	}
+
+	// A link exists, but the image itself is missing.
+	if meta.Uuid == nil {
+		apiRequest.Success(http.StatusOK, nil, "")
 		return
 	}
 

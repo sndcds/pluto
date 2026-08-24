@@ -17,7 +17,7 @@ import (
 	"github.com/sndcds/grains/grains_api"
 )
 
-func GetImageUuidByByContext(
+func GetImageUuidByContext(
 	gc *gin.Context,
 	context string,
 	contextUuid string,
