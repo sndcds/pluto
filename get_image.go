@@ -188,10 +188,20 @@ func getImage(gc *gin.Context) {
 
 	var fileName, genFileName, mimeType string
 	var focusX, focusY *float32
-	sql := fmt.Sprintf(`
-		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y FROM %s.pluto_image WHERE uuid = $1`,
+	query := fmt.Sprintf(`
+		SELECT file_name, gen_file_name, mime_type, focus_x, focus_y
+		FROM %s.pluto_image
+		WHERE uuid = $1`,
 		PlutoInstance.DbSchema)
-	err := pool.QueryRow(ctx, sql, imageUuid).Scan(&fileName, &genFileName, &mimeType, &focusX, &focusY)
+	err := pool.QueryRow(
+		ctx,
+		query,
+		imageUuid).Scan(
+			&fileName,
+			&genFileName,
+			&mimeType,
+			&focusX,
+			&focusY)
 	if err != nil {
 		apiRequest.Error(http.StatusNotFound, "Image not found")
 		return
@@ -200,13 +210,17 @@ func getImage(gc *gin.Context) {
 	imgPath := filepath.Join(PlutoInstance.Config.PlutoImageDir, genFileName)
 	fileBytes, err := os.ReadFile(imgPath)
 	if err != nil {
-		apiRequest.Error(http.StatusInternalServerError, "Image read error")
+		apiRequest.Error(
+			http.StatusUnprocessableEntity,
+			"Image read error")
 		return
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(fileBytes))
 	if err != nil {
-		apiRequest.Error(http.StatusInternalServerError, "Image decode error")
+		apiRequest.Error(
+			http.StatusUnprocessableEntity,
+			"Image decode error")
 		return
 	}
 
@@ -237,22 +251,26 @@ func getImage(gc *gin.Context) {
 		}
 		err = webp.Encode(&buf, img, &options)
 	default:
-		apiRequest.Error(http.StatusUnsupportedMediaType, fmt.Sprintf("unsupported image format: image/%s", fileTypeStr))
+		apiRequest.Error(
+			http.StatusUnsupportedMediaType,
+			fmt.Sprintf("unsupported image format: image/%s", fileTypeStr))
 		return
 	}
 	if err != nil {
-		apiRequest.Error(http.StatusUnsupportedMediaType, "failed to encode image")
+		apiRequest.Error(
+			http.StatusUnsupportedMediaType,
+			"failed to encode image")
 		return
 	}
 
 	// Save to cache
 	err = os.WriteFile(cacheFilePath, buf.Bytes(), 0644)
 	if err == nil {
-		sql = fmt.Sprintf(`
+		query = fmt.Sprintf(`
 				INSERT INTO %s.pluto_cache (receipt, pluto_image_uuid, mime_type)
 				VALUES ($1, $2::uuid, $3)`,
 			PlutoInstance.DbSchema)
-		_, _ = pool.Exec(ctx, sql, imageReceipt, imageUuid, fileTypeStr)
+		_, _ = pool.Exec(ctx, query, imageReceipt, imageUuid, fileTypeStr)
 	}
 
 	gc.Header("Content-Type", "image/"+fileTypeStr)
